@@ -21,7 +21,9 @@ See .env.example for the full list.
 from __future__ import annotations
 
 import argparse
+import http.client
 import json
+import os
 import sys
 import time
 import urllib.error
@@ -57,8 +59,6 @@ def load_config() -> dict:
                 continue
             key, _, val = line.partition("=")
             cfg[key.strip()] = val.strip()
-    import os
-
     for key in (
         "WXCC_CLIENT_ID",
         "WXCC_CLIENT_SECRET",
@@ -130,6 +130,12 @@ def _get(url: str, token: str) -> tuple[int, str]:
             return resp.status, resp.read().decode()
     except urllib.error.HTTPError as e:
         return e.code, e.read().decode(errors="replace")
+    except urllib.error.URLError as e:
+        die(f"connection failed for {url}: {e.reason}")
+    except http.client.InvalidURL as e:
+        # Typically Git Bash (MSYS) rewriting a leading-slash path into
+        # C:/Program Files/Git/... Pass API paths WITHOUT a leading slash.
+        die(f"bad URL {url!r}: {e}")
 
 
 # --------------------------------------------------------------------------- #
@@ -313,4 +319,10 @@ def main(argv: list[str]) -> None:
 
 
 if __name__ == "__main__":
-    main(sys.argv[1:])
+    try:
+        main(sys.argv[1:])
+    except BrokenPipeError:
+        # Downstream closed the pipe (e.g. `| head`). Point stdout at devnull
+        # so the interpreter's exit-time flush doesn't traceback, exit clean.
+        os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+        raise SystemExit(0)

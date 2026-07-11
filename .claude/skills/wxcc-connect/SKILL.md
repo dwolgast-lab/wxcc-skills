@@ -88,10 +88,15 @@ python wxcc.py auth status
 Then confirm a real read against the tenant (List Users is a confirmed read endpoint):
 
 ```bash
-python wxcc.py get "/organization/{orgId}/v2/user"
+python wxcc.py get "organization/{orgId}/v2/user"
 ```
-→ verify: prints a JSON body of users (not an error). This proves auth, org resolution,
-region host, and scope are all correct end-to-end.
+→ verify: prints a JSON body with `meta` (pagination) and `data` (users). This proves auth,
+org resolution, region host, and scope are all correct end-to-end.
+
+**Always pass API paths WITHOUT a leading slash.** Git Bash (MSYS) rewrites a leading-slash
+argument into a `C:/Program Files/Git/...` filesystem path before Python sees it; the
+no-slash form works identically in every shell (verified in Git Bash and PowerShell,
+2026-07-10).
 
 ## Troubleshooting
 
@@ -100,7 +105,8 @@ region host, and scope are all correct end-to-end.
 | Browser shows redirect-URI error | The URI in the Integration ≠ `WXCC_REDIRECT_URI`. Make them identical, including scheme, host, port, and `/callback`. |
 | `state mismatch on callback` | A stale/duplicate browser tab answered. Re-run `auth login` and use the freshly opened tab. |
 | HTTP `401` on `get` | Token expired or scope missing. Try `python wxcc.py auth refresh`; if it persists, re-run `auth login`. Confirm the authorizing user is a CC admin. |
-| `org id is unknown` / 404 on org | Auto-derivation from the token failed (this method is unverified). Set `WXCC_ORG_ID` in `.env` to your tenant's CC org id. |
+| `org id is unknown` / 404 on org | Auto-derivation from the token failed. Set `WXCC_ORG_ID` in `.env` to your tenant's CC org id. |
+| `bad URL ... C:/Program Files/Git/...` | Git Bash mangled a leading-slash path. Re-run with the path's leading `/` removed. |
 | Reads work but writes 403 | You only have `cjp:config_read`. See "Adding write access". |
 | Wrong/empty data | `WXCC_API_BASE` points at the wrong region. Set it to your tenant's host. |
 
@@ -112,9 +118,9 @@ in `.env`, then re-run `python wxcc.py auth login` to re-consent to the broader 
 
 ## Provenance and maintenance
 
-Facts below were confirmed on 2026-07-10 from official Webex docs (fetched that day) and by
-running the helper locally. The full OAuth round-trip (`auth login`) is verified by the
-operator against a live tenant, not by the skill author.
+Facts below were confirmed on 2026-07-10 from official Webex docs (fetched that day), by
+running the helper locally, and by a successful end-to-end run (consent + List Users read)
+against a live us1 tenant on 2026-07-10.
 
 - OAuth endpoints `https://webexapis.com/v1/authorize` and `/v1/access_token`; access token
   ~14 days, refresh token ~90 days rolling — doc'd from developer.webex.com OAuth guide,
@@ -123,9 +129,14 @@ operator against a live tenant, not by the skill author.
   operator (2026-07-10) and the converged-portal announcement.
 - CC read scope `cjp:config_read` (write `cjp:config`); authorizing user must be a CC admin —
   doc'd from the Webex CC API authentication blog, 2026-07-10.
-- API host `https://api.wxcc-us1.cisco.com` and List Users path `/organization/{orgId}/v2/user` —
-  doc'd from the same blog, 2026-07-10.
-- orgId derived from the substring after the token's final `_` — doc'd but **UNVERIFIED**
-  against a live tenant; treat as candidate until step 4 succeeds. `WXCC_ORG_ID` overrides it.
+- API host `https://api.wxcc-us1.cisco.com` and List Users path `organization/{orgId}/v2/user` —
+  ran against a live tenant 2026-07-10 (HTTP 200, real user data).
+- orgId derived from the substring after the token's final `_` — **verified** against a live
+  tenant 2026-07-10 (derived org id returned real data). `WXCC_ORG_ID` still overrides it.
+- Pagination: responses carry `meta.page`, `meta.pageSize` (default 100), `meta.totalPages`,
+  `meta.totalRecords`, and `meta.links.next|self|first|last`; pages requested via
+  `?page=N&pageSize=N` — observed in a live List Users response, 2026-07-10.
+- Leading-slash paths break under Git Bash (MSYS path conversion) — reproduced and fixed-by-
+  convention 2026-07-10; re-verify: run step 4's command in Git Bash.
 - Helper interface (`auth login|status|refresh|logout`, `get PATH`) — ran locally 2026-07-10;
   re-verify: `python wxcc.py --help`.

@@ -14,8 +14,13 @@ OAuth, token storage/refresh, org-id resolution, and authenticated requests. Aut
 **OAuth Integration** (user-context, authorization-code flow). Longer term this helper is
 intended to graduate into an MCP server.
 
-Not yet verified end-to-end against a live tenant: the `auth login` consent round-trip and
-the orgId-from-token derivation. See `wxcc-connect`.
+Verified end-to-end against a live us1 tenant (2026-07-10): consent flow, token storage,
+orgId auto-derivation, and an authenticated List Users read. Responses paginate via
+`meta.page`/`pageSize` (default 100) with `meta.links.next`; records are in `data[]`.
+
+**Convention:** pass API paths to `wxcc.py get` **without a leading slash**
+(`organization/{orgId}/v2/user`) â€” Git Bash rewrites leading-slash arguments into
+filesystem paths.
 
 ## Quick start
 
@@ -25,7 +30,7 @@ it: register an OAuth Integration at developer.webex.com, copy `.env.example` â†
 
 ## Layout
 
-```
+```text
 wxcc.py                                # shared helper CLI (auth + authenticated GET)
 .env.example                           # config template (copy to gitignored .env)
 .claude/skills/<skill-name>/SKILL.md   # individual skills (Claude loads these)
