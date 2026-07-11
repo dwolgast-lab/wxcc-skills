@@ -1,0 +1,25 @@
+# --- Secrets: never commit tokens or credentials ---
+.env
+.env.*
+*.token
+*.secret
+secrets/
+credentials.json
+tokens.json
+*.pem
+
+# --- OS / editor ---
+Thumbs.db
+Desktop.ini
+.DS_Store
+.vscode/
+.idea/
+
+# --- Language artifacts (in case helper scripts are added) ---
+__pycache__/
+*.pyc
+.venv/
+venv/
+node_modules/
+dist/
+build/
