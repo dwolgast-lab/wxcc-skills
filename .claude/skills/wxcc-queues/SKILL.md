@@ -20,8 +20,7 @@ Uses the shared helper `wxcc.py` (repo root); requires a working connection
 **Do NOT use when:**
 - Auth errors (401 / "not authenticated") → **wxcc-connect**.
 - Resolving the teams referenced by a queue's distribution groups → **wxcc-teams**.
-- Creating or modifying queues → no write skill exists yet; needs `cjp:config` scope
-  (wxcc-connect "Adding write access"). Do not improvise writes.
+- Creating/updating/deleting queues → **wxcc-queues-write**.
 
 ## Ground rules
 

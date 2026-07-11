@@ -5,6 +5,11 @@ Notable changes to the wxcc-skills library. Format loosely follows
 
 ## Unreleased
 
+- Added `wxcc-queues-write` (create 201 / update 200 / delete 204, all verified live;
+  required-field rule for the five permission booleans reproduced from a real 400) and
+  `wxcc-users-write` (update-only by design — identity fields immutable, one field
+  silently ignored on 200, team-assignment validation rules documented; every probe
+  reverted).
 - Added `wxcc-teams-write`: create/update/delete teams with confirm-before-write and
   rollback discipline. Full lifecycle verified live (POST 201, PUT 200, DELETE 204,
   tenant restored to baseline). Write scope confirmed as `cjp:config_write`.

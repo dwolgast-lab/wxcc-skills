@@ -18,9 +18,8 @@ live tenant on 2026-07-10.
 
 **Do NOT use when:**
 - Not yet authenticated, or calls return 401 / "not authenticated" → **wxcc-connect**.
-- Creating, updating, or deactivating users → not yet covered by any skill; requires the
-  `cjp:config` write scope (see wxcc-connect "Adding write access") and a write runbook
-  that does not exist yet. Do not improvise writes from this skill.
+- Updating a user's CC config (teams, profiles, enablement) → **wxcc-users-write**.
+- Creating/deleting users or changing names/emails → Control Hub, not this API.
 
 ## Ground rules
 
