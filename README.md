@@ -33,9 +33,10 @@ it: register an OAuth Integration at developer.webex.com, copy `.env.example` â†
 ## Layout
 
 ```text
-wxcc.py                                # shared helper CLI (auth + authenticated GET)
+wxcc.py                                # shared helper CLI (auth + GET/POST/PUT/DELETE)
 .env.example                           # config template (copy to gitignored .env)
 .claude/skills/<skill-name>/SKILL.md   # individual skills (Claude loads these)
+CHANGELOG.md                           # dated log of notable changes
 ```
 
 ## Safety

@@ -15,6 +15,11 @@ Commands:
   auth logout    Delete the stored tokens.
   get PATH       Authenticated GET; substitutes {orgId}; prints JSON.
                  --all follows meta.links.next and combines every page.
+  post PATH      Authenticated POST with a JSON body (--body).
+  put PATH       Authenticated PUT with a JSON body (--body).
+  delete PATH    Authenticated DELETE.
+
+--body accepts inline JSON, @path/to/file.json, or - (read stdin).
 
 Config comes from environment variables, or a `.env` file next to this script.
 See .env.example for the full list.
@@ -124,8 +129,14 @@ def _post_form(url: str, data: dict) -> dict:
         die(f"token endpoint {e.code}: {e.read().decode(errors='replace')}")
 
 
-def _get(url: str, token: str) -> tuple[int, str]:
-    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+def _request(url: str, token: str, method: str = "GET",
+             body: dict | list | None = None) -> tuple[int, str]:
+    headers = {"Authorization": f"Bearer {token}"}
+    data = None
+    if body is not None:
+        data = json.dumps(body).encode()
+        headers["Content-Type"] = "application/json"
+    req = urllib.request.Request(url, data=data, method=method, headers=headers)
     try:
         with urllib.request.urlopen(req) as resp:
             return resp.status, resp.read().decode()
@@ -139,6 +150,10 @@ def _get(url: str, token: str) -> tuple[int, str]:
         die(f"bad URL {url!r}: {e}")
 
 
+def _get(url: str, token: str) -> tuple[int, str]:
+    return _request(url, token)
+
+
 # --------------------------------------------------------------------------- #
 # OAuth
 # --------------------------------------------------------------------------- #
@@ -150,6 +165,10 @@ def _store_token_response(resp: dict) -> dict:
         "expires_at": now + int(resp.get("expires_in", 0)),
         "obtained_at": now,
     }
+    # Webex may include the granted scopes in the token response; keep them if
+    # present so `auth status` can show what the token actually carries.
+    if resp.get("scope"):
+        tok["granted_scopes"] = resp["scope"]
     org = load_config().get("WXCC_ORG_ID") or extract_org_id(tok["access_token"])
     if org:
         tok["org_id"] = org
@@ -246,10 +265,12 @@ def valid_access_token(cfg: dict) -> tuple[str, dict]:
 def cmd_auth_status(cfg: dict) -> None:
     tok = load_tokens()
     print(f"api base : {cfg['WXCC_API_BASE']}")
-    print(f"scopes   : {cfg['WXCC_SCOPES']}")
+    print(f"scopes   : {cfg['WXCC_SCOPES']} (configured; requested at next login)")
     if not tok:
         print("status   : NOT authenticated (run `auth login`).")
         return
+    if tok.get("granted_scopes"):
+        print(f"granted  : {tok['granted_scopes']} (actually on the stored token)")
     remaining = tok.get("expires_at", 0) - int(time.time())
     state = f"valid, ~{remaining // 3600}h left" if remaining > 0 else "EXPIRED (will refresh on next call)"
     print(f"status   : {state}")
@@ -270,13 +291,18 @@ def cmd_auth_logout(_cfg: dict) -> None:
         print("no tokens to delete.")
 
 
-def cmd_get(cfg: dict, path: str, all_pages: bool = False) -> None:
-    token, tok = valid_access_token(cfg)
+def _resolve_path(cfg: dict, tok: dict, path: str) -> str:
     if "{orgId}" in path:
         org = cfg.get("WXCC_ORG_ID") or tok.get("org_id")
         if not org:
             die("path needs {orgId} but org id is unknown - set WXCC_ORG_ID.")
         path = path.replace("{orgId}", org)
+    return path
+
+
+def cmd_get(cfg: dict, path: str, all_pages: bool = False) -> None:
+    token, tok = valid_access_token(cfg)
+    path = _resolve_path(cfg, tok, path)
     base = cfg["WXCC_API_BASE"].rstrip("/")
     url = base + "/" + path.lstrip("/")
 
@@ -314,6 +340,42 @@ def cmd_get(cfg: dict, path: str, all_pages: bool = False) -> None:
                       "data": records}, indent=2))
 
 
+def _parse_body(body_arg: str | None) -> dict | list | None:
+    if body_arg is None:
+        return None
+    if body_arg == "-":
+        raw = sys.stdin.read()
+    elif body_arg.startswith("@"):
+        f = Path(body_arg[1:])
+        if not f.exists():
+            die(f"body file not found: {f}")
+        raw = f.read_text(encoding="utf-8")
+    else:
+        raw = body_arg
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError as e:
+        die(f"--body is not valid JSON: {e}")
+
+
+def cmd_write(cfg: dict, method: str, path: str, body_arg: str | None) -> None:
+    body = _parse_body(body_arg)
+    if method in ("POST", "PUT") and body is None:
+        die(f"{method} requires --body (inline JSON, @file.json, or - for stdin).")
+    token, tok = valid_access_token(cfg)
+    path = _resolve_path(cfg, tok, path)
+    url = cfg["WXCC_API_BASE"].rstrip("/") + "/" + path.lstrip("/")
+    status, resp_body = _request(url, token, method=method, body=body)
+    print(f"HTTP {status}", file=sys.stderr)
+    if resp_body:
+        try:
+            print(json.dumps(json.loads(resp_body), indent=2))
+        except json.JSONDecodeError:
+            print(resp_body)
+    if status >= 400:
+        die(f"request failed: HTTP {status}", code=2)
+
+
 # --------------------------------------------------------------------------- #
 # CLI
 # --------------------------------------------------------------------------- #
@@ -334,6 +396,12 @@ def main(argv: list[str]) -> None:
     p_get.add_argument("--all", action="store_true", dest="all_pages",
                        help="follow meta.links.next and combine all pages")
 
+    for verb in ("post", "put", "delete"):
+        p = sub.add_parser(verb, help=f"authenticated {verb.upper()} (supports {{orgId}})")
+        p.add_argument("path", help="API path (no leading slash)")
+        p.add_argument("--body", default=None,
+                       help="JSON body: inline string, @file.json, or - for stdin")
+
     args = parser.parse_args(argv)
     cfg = load_config()
 
@@ -346,6 +414,8 @@ def main(argv: list[str]) -> None:
         }[args.auth_cmd](cfg)
     elif args.cmd == "get":
         cmd_get(cfg, args.path, all_pages=args.all_pages)
+    elif args.cmd in ("post", "put", "delete"):
+        cmd_write(cfg, args.cmd.upper(), args.path, args.body)
 
 
 if __name__ == "__main__":
