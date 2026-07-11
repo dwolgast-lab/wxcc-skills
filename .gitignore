@@ -1,12 +1,14 @@
 # --- Secrets: never commit tokens or credentials ---
 .env
 .env.*
+!.env.example
 *.token
 *.secret
 secrets/
 credentials.json
 tokens.json
 *.pem
+.wxcc/
 
 # --- OS / editor ---
 Thumbs.db
