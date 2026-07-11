@@ -6,8 +6,9 @@ Each skill is a runbook that teaches Claude how to perform a specific class of W
 
 ## Status
 
-Foundation in place: a shared helper (`wxcc.py`) and the first skill (`wxcc-connect`) that
-sets up and verifies OAuth access. Domain admin skills (users, teams, queues, …) come next.
+Foundation in place: a shared helper (`wxcc.py`), `wxcc-connect` (OAuth setup/verify), and
+`wxcc-users` (read-only user list/search/inspect). More domain skills (teams, queues, …)
+and write operations come next.
 
 **Architecture:** skills call a thin shared Python helper (`wxcc.py`, stdlib only) that owns
 OAuth, token storage/refresh, org-id resolution, and authenticated requests. Auth is an

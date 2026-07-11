@@ -14,6 +14,7 @@ Commands:
   auth refresh   Force an access-token refresh using the stored refresh token.
   auth logout    Delete the stored tokens.
   get PATH       Authenticated GET; substitutes {orgId}; prints JSON.
+                 --all follows meta.links.next and combines every page.
 
 Config comes from environment variables, or a `.env` file next to this script.
 See .env.example for the full list.
@@ -269,22 +270,48 @@ def cmd_auth_logout(_cfg: dict) -> None:
         print("no tokens to delete.")
 
 
-def cmd_get(cfg: dict, path: str) -> None:
+def cmd_get(cfg: dict, path: str, all_pages: bool = False) -> None:
     token, tok = valid_access_token(cfg)
     if "{orgId}" in path:
         org = cfg.get("WXCC_ORG_ID") or tok.get("org_id")
         if not org:
             die("path needs {orgId} but org id is unknown - set WXCC_ORG_ID.")
         path = path.replace("{orgId}", org)
-    url = cfg["WXCC_API_BASE"].rstrip("/") + "/" + path.lstrip("/")
-    status, body = _get(url, token)
-    try:
-        parsed = json.loads(body)
-        print(json.dumps(parsed, indent=2))
-    except json.JSONDecodeError:
-        print(body)
-    if status >= 400:
-        die(f"request failed: HTTP {status}", code=2)
+    base = cfg["WXCC_API_BASE"].rstrip("/")
+    url = base + "/" + path.lstrip("/")
+
+    if not all_pages:
+        status, body = _get(url, token)
+        try:
+            parsed = json.loads(body)
+            print(json.dumps(parsed, indent=2))
+        except json.JSONDecodeError:
+            print(body)
+        if status >= 400:
+            die(f"request failed: HTTP {status}", code=2)
+        return
+
+    # --all: follow meta.links.next until exhausted; emit one combined document.
+    records: list = []
+    pages = 0
+    while url:
+        status, body = _get(url, token)
+        if status >= 400:
+            print(body, file=sys.stderr)
+            die(f"request failed on page {pages}: HTTP {status}", code=2)
+        doc = json.loads(body)
+        data = doc.get("data")
+        if not isinstance(data, list):
+            die("--all requires a paginated list response (meta + data[]); "
+                "got a different shape - retry without --all.")
+        records.extend(data)
+        pages += 1
+        if pages > 500:
+            die("--all aborted after 500 pages - raise pageSize or narrow the query.")
+        next_link = (doc.get("meta") or {}).get("links", {}).get("next")
+        url = base + next_link if next_link else None
+    print(json.dumps({"totalRecords": len(records), "pagesFetched": pages,
+                      "data": records}, indent=2))
 
 
 # --------------------------------------------------------------------------- #
@@ -302,7 +329,10 @@ def main(argv: list[str]) -> None:
     auth_sub.add_parser("logout", help="delete stored tokens")
 
     p_get = sub.add_parser("get", help="authenticated GET (supports {orgId})")
-    p_get.add_argument("path", help="API path, e.g. /organization/{orgId}/v2/user")
+    p_get.add_argument("path", help="API path, e.g. organization/{orgId}/v2/user "
+                                    "(no leading slash - Git Bash mangles it)")
+    p_get.add_argument("--all", action="store_true", dest="all_pages",
+                       help="follow meta.links.next and combine all pages")
 
     args = parser.parse_args(argv)
     cfg = load_config()
@@ -315,7 +345,7 @@ def main(argv: list[str]) -> None:
             "logout": cmd_auth_logout,
         }[args.auth_cmd](cfg)
     elif args.cmd == "get":
-        cmd_get(cfg, args.path)
+        cmd_get(cfg, args.path, all_pages=args.all_pages)
 
 
 if __name__ == "__main__":
