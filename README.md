@@ -7,8 +7,9 @@ Each skill is a runbook that teaches Claude how to perform a specific class of W
 ## Status
 
 Foundation in place: a shared helper (`wxcc.py`) plus read-only skills — `wxcc-connect`
-(OAuth setup/verify), `wxcc-users`, `wxcc-teams`, `wxcc-queues`, `wxcc-sites`. Entry points
-and write operations come next.
+(OAuth setup/verify), `wxcc-users`, `wxcc-teams`, `wxcc-queues`, `wxcc-sites`,
+`wxcc-entry-points` (incl. dial numbers), `wxcc-skill-profiles` (incl. routing skills).
+Write operations come next.
 
 **Architecture:** skills call a thin shared Python helper (`wxcc.py`, stdlib only) that owns
 OAuth, token storage/refresh, org-id resolution, and authenticated requests. Auth is an
