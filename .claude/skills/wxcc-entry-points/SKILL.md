@@ -21,8 +21,7 @@ connection (**wxcc-connect**). Every path and parameter was run against a live t
 **Do NOT use when:**
 - Auth errors (401 / "not authenticated") → **wxcc-connect**.
 - The queue a contact lands in after the EP/flow → **wxcc-queues**.
-- Creating or repointing EPs/DNs → no write skill exists yet; needs `cjp:config` scope
-  (wxcc-connect "Adding write access"). Do not improvise writes.
+- Creating/updating/deleting EPs or repointing DNs → **wxcc-entry-points-write**.
 
 ## Ground rules
 

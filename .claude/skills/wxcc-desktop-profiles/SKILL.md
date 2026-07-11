@@ -23,8 +23,7 @@ and ANI, screen-pop, and timeout behavior. Users reference one via `agentProfile
 - Assigning a profile TO a user → **wxcc-users-write** (`agentProfileId`).
 - The aux codes / ANIs / queues themselves → **wxcc-aux-codes**, **wxcc-outdial-ani**,
   **wxcc-queues**.
-- Desktop Layout (screen arrangement JSON) → different entity (`desktop-layout`), no
-  skill yet.
+- Desktop Layout (screen arrangement JSON) → **wxcc-desktop-layouts**.
 
 ## Reads
 

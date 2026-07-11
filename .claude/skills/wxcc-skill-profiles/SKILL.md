@@ -23,8 +23,7 @@ connection (**wxcc-connect**). Every path and parameter was run against a live t
 - Auth errors (401 / "not authenticated") → **wxcc-connect**.
 - Which team uses a given profile → **wxcc-teams** (teams carry `skillProfileId`).
 - Queue skill requirements → **wxcc-queues** (`queueSkillRequirements` on the queue).
-- Creating or editing skills/profiles → no write skill exists yet; needs `cjp:config`
-  scope (wxcc-connect "Adding write access"). Do not improvise writes.
+- Creating or editing skills/profiles → **wxcc-skill-profiles-write**.
 
 ## Ground rules
 

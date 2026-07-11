@@ -17,6 +17,7 @@ Commands:
                  --all follows meta.links.next and combines every page.
   post PATH      Authenticated POST with a JSON body (--body).
   put PATH       Authenticated PUT with a JSON body (--body).
+  patch PATH     Authenticated PATCH with a JSON body (--body).
   delete PATH    Authenticated DELETE.
 
 --body accepts inline JSON, @path/to/file.json, or - (read stdin).
@@ -360,7 +361,7 @@ def _parse_body(body_arg: str | None) -> dict | list | None:
 
 def cmd_write(cfg: dict, method: str, path: str, body_arg: str | None) -> None:
     body = _parse_body(body_arg)
-    if method in ("POST", "PUT") and body is None:
+    if method in ("POST", "PUT", "PATCH") and body is None:
         die(f"{method} requires --body (inline JSON, @file.json, or - for stdin).")
     token, tok = valid_access_token(cfg)
     path = _resolve_path(cfg, tok, path)
@@ -396,7 +397,7 @@ def main(argv: list[str]) -> None:
     p_get.add_argument("--all", action="store_true", dest="all_pages",
                        help="follow meta.links.next and combine all pages")
 
-    for verb in ("post", "put", "delete"):
+    for verb in ("post", "put", "patch", "delete"):
         p = sub.add_parser(verb, help=f"authenticated {verb.upper()} (supports {{orgId}})")
         p.add_argument("path", help="API path (no leading slash)")
         p.add_argument("--body", default=None,
@@ -414,7 +415,7 @@ def main(argv: list[str]) -> None:
         }[args.auth_cmd](cfg)
     elif args.cmd == "get":
         cmd_get(cfg, args.path, all_pages=args.all_pages)
-    elif args.cmd in ("post", "put", "delete"):
+    elif args.cmd in ("post", "put", "patch", "delete"):
         cmd_write(cfg, args.cmd.upper(), args.path, args.body)
 
 

@@ -6,10 +6,12 @@ Each skill is a runbook that teaches Claude how to perform a specific class of W
 
 ## Status
 
-Foundation in place: a shared helper (`wxcc.py`) plus read-only skills — `wxcc-connect`
-(OAuth setup/verify), `wxcc-users`, `wxcc-teams`, `wxcc-queues`, `wxcc-sites`,
-`wxcc-entry-points` (incl. dial numbers), `wxcc-skill-profiles` (incl. routing skills).
-Write operations come next.
+19 skills, every recipe verified against a live tenant: connection setup
+(`wxcc-connect`), reads and writes for users, teams, queues, sites, entry points +
+dial numbers, routing skills + skill profiles, aux codes, address books, outdial ANI,
+Desktop Profiles, and desktop layouts — plus interaction-data reporting
+(`wxcc-tasks-search`) and event subscriptions (`wxcc-webhooks`). See the
+[User Guide](docs/user-guide.md) for the full catalog and what each one can write.
 
 **Architecture:** skills call a thin shared Python helper (`wxcc.py`, stdlib only) that owns
 OAuth, token storage/refresh, org-id resolution, and authenticated requests. Auth is an
@@ -36,7 +38,7 @@ it: register an OAuth Integration at developer.webex.com, copy `.env.example` �
 ## Layout
 
 ```text
-wxcc.py                                # shared helper CLI (auth + GET/POST/PUT/DELETE)
+wxcc.py                                # shared helper CLI (auth + GET/POST/PUT/PATCH/DELETE)
 .env.example                           # config template (copy to gitignored .env)
 .claude/skills/<skill-name>/SKILL.md   # individual skills (Claude loads these)
 CHANGELOG.md                           # dated log of notable changes

@@ -24,6 +24,8 @@ Ask things like:
 | "Add a wrap-up code called Escalated" | Creates the auxiliary code |
 | "What does the Default desktop profile let agents do?" | Reads the Desktop Profile config |
 | "Raise queue X's service level threshold to 30 seconds" | Confirms, PUTs, re-reads to prove it changed |
+| "How many calls did we take this week, by queue?" | Queries the GraphQL Search API over interaction data |
+| "Send task-ended events to `https://my-server/hook`" | Registers a webhook subscription (confirms first) |
 
 ## Setup (once per machine, ~15 minutes)
 
@@ -67,12 +69,15 @@ Reads and writes are treated differently, on purpose:
 | wxcc-teams / wxcc-teams-write | Teams | full CRUD |
 | wxcc-queues / wxcc-queues-write | Contact service queues, routing groups, SLTs | full CRUD |
 | wxcc-sites | Sites | read-only |
-| wxcc-entry-points | Entry points + dial numbers (number↔EP mapping) | read-only |
-| wxcc-skill-profiles | Routing skills + skill profiles | read-only |
+| wxcc-entry-points / wxcc-entry-points-write | Entry points + dial numbers (number↔EP mapping) | EP full CRUD; DN repoint (numbers themselves are provisioned in Calling) |
+| wxcc-skill-profiles / wxcc-skill-profiles-write | Routing skills + skill profiles | full CRUD |
 | wxcc-aux-codes | Idle + wrap-up codes | full CRUD |
 | wxcc-address-books | Address books + entries | full CRUD |
 | wxcc-outdial-ani | Outbound caller-ID lists | create/delete (update pending) |
 | wxcc-desktop-profiles | Desktop Profiles (agent desktop behavior) | update (create/delete pending) |
+| wxcc-desktop-layouts | Agent Desktop screen layouts (embedded layout JSON) | full CRUD |
+| wxcc-tasks-search | Calls/tasks/agent sessions — reporting & wallboard data | read-only |
+| wxcc-webhooks | Event subscriptions — push agent/task events to your server | full CRUD |
 
 > Naming note: Desktop Profiles appear in the API as `agent-profile` — that name is
 > backwards compatibility only. Say "Desktop Profile."
@@ -91,17 +96,17 @@ server.
 
 - User **creation/deletion** is not possible via this API (Control Hub owns identity);
   names/emails are read-only here.
-- Some entities are read-only so far: sites, entry points/dial numbers, skill profiles.
-- Flows, desktop layouts, webhooks/subscriptions, bulk import/export, and the GraphQL
-  analytics API are on the roadmap, not built.
+- **Phone numbers cannot be invented**: dial-number records map numbers that already
+  exist in the Webex Calling location inventory (provisioning stays in Control Hub).
+- Sites are still read-only.
+- Flows and bulk import/export are on the roadmap, not built.
 - Region host is configured manually (`WXCC_API_BASE`); only us1 has been exercised.
 - Anything a skill marks "candidate" has not been run against a live tenant yet.
 
 ## Roadmap
 
-Entry-point/dial-number writes · skill & skill-profile writes · desktop layouts ·
-bulk-export · webhooks · GraphQL analytics (real-time stats) · MCP server packaging ·
-this guide, expanded.
+Flows · bulk-export · GraphQL aggregations (wallboard formulas) · site writes ·
+MCP server packaging · this guide, expanded.
 
 ---
-*Draft 1 — 2026-07-11. Feedback welcome: what would you ask it to do first?*
+*Draft 2 — 2026-07-11. Feedback welcome: what would you ask it to do first?*

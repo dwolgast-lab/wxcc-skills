@@ -5,6 +5,16 @@ Notable changes to the wxcc-skills library. Format loosely follows
 
 ## Unreleased
 
+- Added five skills, all probed live: `wxcc-entry-points-write` (EP lifecycle verified
+  201/200/204; dial-number writes documented incl. the numbers-must-exist-in-Calling
+  404), `wxcc-skill-profiles-write` (skill + profile lifecycles verified, ENUM value
+  rules and the sub-entity-id 409/500 traps reproduced), `wxcc-desktop-layouts`
+  (read + write; layout JSON travels as an embedded string), `wxcc-tasks-search`
+  (GraphQL Search API + REST `v1/tasks` over interaction data), and `wxcc-webhooks`
+  (event-type catalog + subscription CRUD — update is PATCH).
+- `wxcc.py`: new `patch` command (subscriptions API updates use PATCH).
+- Sibling read skills now point at their write counterparts; user guide updated
+  (Draft 2): catalog, limits, roadmap.
 - User-guide PDF now regenerates automatically: `scripts/build_user_guide_pdf.py`
   (markdown → styled HTML → headless Chrome) wired to a versioned `hooks/pre-commit`
   that rebuilds and stages the PDF whenever `docs/user-guide.md` is committed.
