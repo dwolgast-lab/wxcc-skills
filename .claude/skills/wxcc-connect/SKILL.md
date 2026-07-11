@@ -112,9 +112,13 @@ no-slash form works identically in every shell (verified in Git Bash and PowerSh
 
 ## Adding write access (later)
 
-Write skills need the `cjp:config` scope. To add it: edit the Integration on
-developer.webex.com to include `cjp:config`, set `WXCC_SCOPES=cjp:config_read cjp:config`
-in `.env`, then re-run `python wxcc.py auth login` to re-consent to the broader scope.
+Write skills need the `cjp:config_write` scope (confirmed working 2026-07-11; Cisco's
+Postman collection requests the triple `cjp:config cjp:config_read cjp:config_write`).
+To add it: make sure the Integration on developer.webex.com includes those scopes, set
+`WXCC_SCOPES=cjp:config_read cjp:config cjp:config_write` in `.env` (space-separated, no
+quotes), then re-run `python wxcc.py auth login` to re-consent. Scopes registered on the
+app are NOT on your token until a login requests them — `auth status` shows a `granted :`
+line with what the stored token actually carries.
 
 ## Provenance and maintenance
 

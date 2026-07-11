@@ -18,8 +18,7 @@ Uses the shared helper `wxcc.py` (repo root); requires a working connection
 **Do NOT use when:**
 - Auth errors (401 / "not authenticated") → **wxcc-connect**.
 - Resolving a team's site id to site details → **wxcc-sites**.
-- Creating/renaming/deactivating teams → no write skill exists yet; needs `cjp:config`
-  scope (wxcc-connect "Adding write access"). Do not improvise writes.
+- Creating/renaming/updating/deleting teams → **wxcc-teams-write**.
 
 ## Ground rules
 

@@ -5,9 +5,10 @@ Notable changes to the wxcc-skills library. Format loosely follows
 
 ## Unreleased
 
-- `wxcc.py`: `post`/`put`/`delete` commands with `--body` (inline JSON, `@file`, or stdin)
-  in preparation for write skills. Write calls verified to be rejected (403) until the
-  token is re-consented with a write scope.
+- Added `wxcc-teams-write`: create/update/delete teams with confirm-before-write and
+  rollback discipline. Full lifecycle verified live (POST 201, PUT 200, DELETE 204,
+  tenant restored to baseline). Write scope confirmed as `cjp:config_write`.
+- `wxcc.py`: `post`/`put`/`delete` commands with `--body` (inline JSON, `@file`, or stdin).
 - `auth status` now shows the scopes actually granted on the stored token when the token
   response includes them, alongside the configured (requested-at-next-login) scopes.
 
