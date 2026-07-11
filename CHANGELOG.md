@@ -5,6 +5,12 @@ Notable changes to the wxcc-skills library. Format loosely follows
 
 ## Unreleased
 
+- Added four domain skills, all probed live: `wxcc-aux-codes` (full CRUD),
+  `wxcc-address-books` (full two-level CRUD incl. entries), `wxcc-outdial-ani`
+  (create/delete verified — endpoints absent from Cisco's collection; update pending),
+  `wxcc-desktop-profiles` (reads + verified update shape; Desktop Profile is the current
+  name — `agent-profile` in paths is backwards compatibility).
+- First draft of the [User Guide](docs/user-guide.md).
 - Added `wxcc-queues-write` (create 201 / update 200 / delete 204, all verified live;
   required-field rule for the five permission booleans reproduced from a real 400) and
   `wxcc-users-write` (update-only by design — identity fields immutable, one field

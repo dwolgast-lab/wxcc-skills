@@ -24,6 +24,9 @@ orgId auto-derivation, and an authenticated List Users read. Responses paginate 
 (`organization/{orgId}/v2/user`) — Git Bash rewrites leading-slash arguments into
 filesystem paths.
 
+**New here? Start with the [User Guide](docs/user-guide.md)** — what it does, setup, the
+safety model, and the full skill catalog.
+
 ## Quick start
 
 Load the **wxcc-connect** skill (or read `.claude/skills/wxcc-connect/SKILL.md`) and follow
