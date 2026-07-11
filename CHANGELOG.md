@@ -5,6 +5,10 @@ Notable changes to the wxcc-skills library. Format loosely follows
 
 ## Unreleased
 
+- User-guide PDF now regenerates automatically: `scripts/build_user_guide_pdf.py`
+  (markdown → styled HTML → headless Chrome) wired to a versioned `hooks/pre-commit`
+  that rebuilds and stages the PDF whenever `docs/user-guide.md` is committed.
+  Activate per clone with `git config core.hooksPath hooks`.
 - Added four domain skills, all probed live: `wxcc-aux-codes` (full CRUD),
   `wxcc-address-books` (full two-level CRUD incl. entries), `wxcc-outdial-ani`
   (create/delete verified — endpoints absent from Cisco's collection; update pending),

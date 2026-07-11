@@ -40,7 +40,13 @@ wxcc.py                                # shared helper CLI (auth + GET/POST/PUT/
 .env.example                           # config template (copy to gitignored .env)
 .claude/skills/<skill-name>/SKILL.md   # individual skills (Claude loads these)
 CHANGELOG.md                           # dated log of notable changes
+docs/                                  # user guide (md = source of truth, pdf = export)
+scripts/build_user_guide_pdf.py        # regenerates the guide PDF (markdown + Chrome)
+hooks/pre-commit                       # auto-rebuilds the PDF when the guide is committed
 ```
+
+The guide PDF regenerates automatically on commit. One-time setup per clone:
+`git config core.hooksPath hooks` (needs `pip install markdown` and Chrome or Edge).
 
 ## Safety
 

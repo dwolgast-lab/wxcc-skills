@@ -1,0 +1,12 @@
+#!/bin/sh
+# Regenerate the user-guide PDF whenever docs/user-guide.md is part of the commit,
+# and include the fresh PDF in the same commit.
+# Activate once per clone:  git config core.hooksPath hooks
+if git diff --cached --name-only | grep -q '^docs/user-guide\.md$'; then
+    echo "pre-commit: docs/user-guide.md staged - regenerating PDF..."
+    python scripts/build_user_guide_pdf.py || {
+        echo "pre-commit: PDF build FAILED - commit aborted." >&2
+        exit 1
+    }
+    git add docs/wxcc-skills-user-guide.pdf
+fi
