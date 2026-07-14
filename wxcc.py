@@ -46,8 +46,27 @@ AUTHORIZE_URL = "https://webexapis.com/v1/authorize"
 TOKEN_URL = "https://webexapis.com/v1/access_token"
 
 REPO_DIR = Path(__file__).resolve().parent
-ENV_FILE = REPO_DIR / ".env"
-TOKEN_STORE = REPO_DIR / ".wxcc" / "tokens.json"
+
+# --- Multi-tenant: WXCC_PROFILE picks which tenant this process talks to. ---
+# Unset          -> .env              + .wxcc/tokens.json          (default tenant)
+# WXCC_PROFILE=x -> .env.x            + .wxcc/tokens.x.json
+# There is deliberately NO "switch tenant" command: a mutable current-tenant
+# pointer is how a delete meant for sandbox lands on production. The tenant is
+# chosen by the environment the process starts in, and `auth status` prints it.
+
+
+def profile() -> str | None:
+    return os.environ.get("WXCC_PROFILE") or None
+
+
+def env_file() -> Path:
+    p = profile()
+    return REPO_DIR / (f".env.{p}" if p else ".env")
+
+
+def token_store() -> Path:
+    p = profile()
+    return REPO_DIR / ".wxcc" / (f"tokens.{p}.json" if p else "tokens.json")
 
 # Refresh a bit before actual expiry to avoid using a token mid-flight.
 EXPIRY_SKEW_SECONDS = 300
@@ -59,8 +78,9 @@ EXPIRY_SKEW_SECONDS = 300
 def load_config() -> dict:
     """Environment variables win; `.env` next to this script fills the gaps."""
     cfg: dict[str, str] = {}
-    if ENV_FILE.exists():
-        for raw in ENV_FILE.read_text(encoding="utf-8").splitlines():
+    envf = env_file()
+    if envf.exists():
+        for raw in envf.read_text(encoding="utf-8").splitlines():
             line = raw.strip()
             if not line or line.startswith("#") or "=" not in line:
                 continue
@@ -86,26 +106,39 @@ def require(cfg: dict, *keys: str) -> None:
     missing = [k for k in keys if not cfg.get(k)]
     if missing:
         die(f"Missing required config: {', '.join(missing)}. "
-            f"Set them in {ENV_FILE.name} or the environment (see .env.example).")
+            f"Set them in {env_file().name} or the environment (see .env.example).")
+
+
+class WxccError(Exception):
+    """Any failure a caller should surface: config, auth, or API.
+
+    Raised rather than exiting so this module works as a library (the MCP
+    server turns these into tool errors); `main` renders it and sets the code.
+    """
+
+    def __init__(self, msg: str, code: int = 1):
+        super().__init__(msg)
+        self.code = code
 
 
 def die(msg: str, code: int = 1) -> "None":
-    print(f"error: {msg}", file=sys.stderr)
-    raise SystemExit(code)
+    raise WxccError(msg, code)
 
 
 # --------------------------------------------------------------------------- #
 # Token store
 # --------------------------------------------------------------------------- #
 def load_tokens() -> dict | None:
-    if not TOKEN_STORE.exists():
+    store = token_store()
+    if not store.exists():
         return None
-    return json.loads(TOKEN_STORE.read_text(encoding="utf-8"))
+    return json.loads(store.read_text(encoding="utf-8"))
 
 
 def save_tokens(tok: dict) -> None:
-    TOKEN_STORE.parent.mkdir(parents=True, exist_ok=True)
-    TOKEN_STORE.write_text(json.dumps(tok, indent=2), encoding="utf-8")
+    store = token_store()
+    store.parent.mkdir(parents=True, exist_ok=True)
+    store.write_text(json.dumps(tok, indent=2), encoding="utf-8")
 
 
 def extract_org_id(access_token: str) -> str | None:
@@ -151,8 +184,69 @@ def _request(url: str, token: str, method: str = "GET",
         die(f"bad URL {url!r}: {e}")
 
 
-def _get(url: str, token: str) -> tuple[int, str]:
-    return _request(url, token)
+class WxccClient:
+    """Authenticated access to one org's WxCC API.
+
+    The token is supplied, not looked up: locally it comes from the token store
+    (`client_from_store`), and in a remote MCP server it is the caller's own
+    OAuth token, arriving on the request. Nothing here touches disk.
+    """
+
+    def __init__(self, api_base: str, token: str, org_id: str | None = None):
+        self.api_base = api_base.rstrip("/")
+        self.token = token
+        self.org_id = org_id or extract_org_id(token)
+
+    def url(self, path: str) -> str:
+        if "{orgId}" in path:
+            if not self.org_id:
+                die("path needs {orgId} but org id is unknown - set WXCC_ORG_ID.")
+            path = path.replace("{orgId}", self.org_id)
+        return self.api_base + "/" + path.lstrip("/")
+
+    def request(self, method: str, path: str,
+                body: dict | list | None = None) -> tuple[int, str]:
+        return _request(self.url(path), self.token, method=method, body=body)
+
+    def json(self, method: str, path: str,
+             body: dict | list | None = None) -> tuple[int, object]:
+        """Same as `request`, but parses the body. Non-JSON is returned as text."""
+        status, text = self.request(method, path, body)
+        if not text:
+            return status, None
+        try:
+            return status, json.loads(text)
+        except json.JSONDecodeError:
+            return status, text
+
+    def list_all(self, path: str) -> tuple[list, int]:
+        """Follow meta.links.next to exhaustion. Returns (records, pages)."""
+        records: list = []
+        pages = 0
+        url = self.url(path)
+        while url:
+            status, text = _request(url, self.token)
+            if status >= 400:
+                die(f"request failed on page {pages}: HTTP {status}\n{text}", code=2)
+            doc = json.loads(text)
+            data = doc.get("data")
+            if not isinstance(data, list):
+                die("--all requires a paginated list response (meta + data[]); "
+                    "got a different shape - retry without --all.")
+            records.extend(data)
+            pages += 1
+            if pages > 500:
+                die("--all aborted after 500 pages - raise pageSize or narrow the query.")
+            next_link = (doc.get("meta") or {}).get("links", {}).get("next")
+            url = self.api_base + next_link if next_link else None
+        return records, pages
+
+
+def client_from_store(cfg: dict) -> WxccClient:
+    """Build a client from the locally stored tokens, refreshing if needed."""
+    token, tok = valid_access_token(cfg)
+    return WxccClient(cfg["WXCC_API_BASE"], token,
+                      cfg.get("WXCC_ORG_ID") or tok.get("org_id"))
 
 
 # --------------------------------------------------------------------------- #
@@ -231,7 +325,8 @@ def cmd_auth_login(cfg: dict) -> None:
         "redirect_uri": cfg["WXCC_REDIRECT_URI"],
     })
     tok = _store_token_response(resp)
-    print(f"Authorized. Tokens saved to {TOKEN_STORE}.")
+    print(f"Authorized. Tokens saved to {token_store()}.")
+    print(f"profile: {profile() or '(default)'}")
     print(f"org_id: {tok.get('org_id', '(not resolved - set WXCC_ORG_ID)')}")
 
 
@@ -265,6 +360,7 @@ def valid_access_token(cfg: dict) -> tuple[str, dict]:
 # --------------------------------------------------------------------------- #
 def cmd_auth_status(cfg: dict) -> None:
     tok = load_tokens()
+    print(f"profile  : {profile() or '(default)'}  [{env_file().name}]")
     print(f"api base : {cfg['WXCC_API_BASE']}")
     print(f"scopes   : {cfg['WXCC_SCOPES']} (configured; requested at next login)")
     if not tok:
@@ -285,58 +381,28 @@ def cmd_auth_refresh(cfg: dict) -> None:
 
 
 def cmd_auth_logout(_cfg: dict) -> None:
-    if TOKEN_STORE.exists():
-        TOKEN_STORE.unlink()
-        print(f"deleted {TOKEN_STORE}.")
+    store = token_store()
+    if store.exists():
+        store.unlink()
+        print(f"deleted {store}.")
     else:
         print("no tokens to delete.")
 
 
-def _resolve_path(cfg: dict, tok: dict, path: str) -> str:
-    if "{orgId}" in path:
-        org = cfg.get("WXCC_ORG_ID") or tok.get("org_id")
-        if not org:
-            die("path needs {orgId} but org id is unknown - set WXCC_ORG_ID.")
-        path = path.replace("{orgId}", org)
-    return path
-
-
 def cmd_get(cfg: dict, path: str, all_pages: bool = False) -> None:
-    token, tok = valid_access_token(cfg)
-    path = _resolve_path(cfg, tok, path)
-    base = cfg["WXCC_API_BASE"].rstrip("/")
-    url = base + "/" + path.lstrip("/")
+    client = client_from_store(cfg)
 
     if not all_pages:
-        status, body = _get(url, token)
+        status, body = client.request("GET", path)
         try:
-            parsed = json.loads(body)
-            print(json.dumps(parsed, indent=2))
+            print(json.dumps(json.loads(body), indent=2))
         except json.JSONDecodeError:
             print(body)
         if status >= 400:
             die(f"request failed: HTTP {status}", code=2)
         return
 
-    # --all: follow meta.links.next until exhausted; emit one combined document.
-    records: list = []
-    pages = 0
-    while url:
-        status, body = _get(url, token)
-        if status >= 400:
-            print(body, file=sys.stderr)
-            die(f"request failed on page {pages}: HTTP {status}", code=2)
-        doc = json.loads(body)
-        data = doc.get("data")
-        if not isinstance(data, list):
-            die("--all requires a paginated list response (meta + data[]); "
-                "got a different shape - retry without --all.")
-        records.extend(data)
-        pages += 1
-        if pages > 500:
-            die("--all aborted after 500 pages - raise pageSize or narrow the query.")
-        next_link = (doc.get("meta") or {}).get("links", {}).get("next")
-        url = base + next_link if next_link else None
+    records, pages = client.list_all(path)
     print(json.dumps({"totalRecords": len(records), "pagesFetched": pages,
                       "data": records}, indent=2))
 
@@ -363,10 +429,8 @@ def cmd_write(cfg: dict, method: str, path: str, body_arg: str | None) -> None:
     body = _parse_body(body_arg)
     if method in ("POST", "PUT", "PATCH") and body is None:
         die(f"{method} requires --body (inline JSON, @file.json, or - for stdin).")
-    token, tok = valid_access_token(cfg)
-    path = _resolve_path(cfg, tok, path)
-    url = cfg["WXCC_API_BASE"].rstrip("/") + "/" + path.lstrip("/")
-    status, resp_body = _request(url, token, method=method, body=body)
+    client = client_from_store(cfg)
+    status, resp_body = client.request(method, path, body)
     print(f"HTTP {status}", file=sys.stderr)
     if resp_body:
         try:
@@ -422,6 +486,9 @@ def main(argv: list[str]) -> None:
 if __name__ == "__main__":
     try:
         main(sys.argv[1:])
+    except WxccError as e:
+        print(f"error: {e}", file=sys.stderr)
+        raise SystemExit(e.code)
     except BrokenPipeError:
         # Downstream closed the pipe (e.g. `| head`). Point stdout at devnull
         # so the interpreter's exit-time flush doesn't traceback, exit clean.

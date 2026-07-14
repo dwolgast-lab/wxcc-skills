@@ -60,6 +60,45 @@ Reads and writes are treated differently, on purpose:
 - Credentials live in a gitignored `.env`; tokens in a gitignored `.wxcc/`. Nothing
   secret is ever committed.
 
+## Working with more than one tenant
+
+If you administer several tenants, **there is deliberately no "switch tenant" command.**
+A mutable *current tenant* is how a delete meant for sandbox lands on production. Instead
+the tenant is chosen by the environment a process starts in, and it is visible in every
+call.
+
+Give each tenant a **profile** — its own config file and its own token store, which never
+mix:
+
+| `WXCC_PROFILE` | config | tokens |
+|---|---|---|
+| *(unset)* | `.env` | `.wxcc/tokens.json` |
+| `sandbox` | `.env.sandbox` | `.wxcc/tokens.sandbox.json` |
+| `prod` | `.env.prod` | `.wxcc/tokens.prod.json` |
+
+Authenticate each one once:
+
+```bash
+WXCC_PROFILE=sandbox python wxcc.py auth login
+WXCC_PROFILE=prod    python wxcc.py auth login
+```
+
+`python wxcc.py auth status` always prints which profile and org it is talking to.
+
+Then register **one MCP server per tenant** in `.mcp.json`:
+
+```json
+{ "mcpServers": {
+    "wxcc-sandbox": { "type": "stdio", "command": "python", "args": ["mcp_server.py"],
+                      "env": { "WXCC_PROFILE": "sandbox" } },
+    "wxcc-prod":    { "type": "stdio", "command": "python", "args": ["mcp_server.py"],
+                      "env": { "WXCC_PROFILE": "prod" } } } }
+```
+
+Now the tenant is part of the tool name — `wxcc-sandbox` vs `wxcc-prod` — so Claude cannot
+silently act on the wrong one, and you can see which it used. Ask for "the sandbox queues"
+and it routes accordingly. `wxcc_whoami` reports the org id if you ever want to be sure.
+
 ## Skill catalog
 
 | Skill | Covers | Writes? |
@@ -99,14 +138,18 @@ server.
 - **Phone numbers cannot be invented**: dial-number records map numbers that already
   exist in the Webex Calling location inventory (provisioning stays in Control Hub).
 - Sites are still read-only.
-- Flows and bulk import/export are on the roadmap, not built.
+- **Flows are out of scope here, by design.** Cisco ships its own `flow-store` MCP
+  server for flow authoring; run it alongside this one rather than expecting flow
+  tools from us. What this repo gives you is the config the flows *bind to* —
+  entry points, queues, teams, skill profiles.
+- Bulk import/export is on the roadmap, not built.
 - Region host is configured manually (`WXCC_API_BASE`); only us1 has been exercised.
 - Anything a skill marks "candidate" has not been run against a live tenant yet.
 
 ## Roadmap
 
-Flows · bulk-export · GraphQL aggregations (wallboard formulas) · site writes ·
-MCP server packaging · this guide, expanded.
+Bulk-export · GraphQL aggregations (wallboard formulas) · site writes ·
+remote (Cloud Run) MCP deployment · this guide, expanded.
 
 ---
 *Draft 2 — 2026-07-11. Feedback welcome: what would you ask it to do first?*
