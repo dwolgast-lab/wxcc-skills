@@ -28,3 +28,9 @@ build/
 
 # Personal Claude Code settings (permissions, etc.)
 .claude/settings.local.json
+
+# Tenant nicknames map to real customer names - keep out of the public repo
+.claude/tenants.local.md
+
+# Per-user tenant config - server names reveal real customer names. Use .mcp.json.example
+.mcp.json

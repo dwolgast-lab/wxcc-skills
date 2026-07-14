@@ -22,7 +22,23 @@ from mcp.server.fastmcp import FastMCP
 
 import wxcc
 
-mcp = FastMCP("wxcc")
+# Which tenant is this server process bound to? WXCC_PROFILE selects the config
+# and token store; the LABEL and ALIASES are how a human refers to the tenant, so
+# they go into the server's own identity and reach the model at tool-selection time.
+_CFG = wxcc.load_config()
+_PROFILE = wxcc.profile() or "default"
+_LABEL = _CFG.get("WXCC_TENANT_LABEL") or _PROFILE
+_ALIASES = _CFG.get("WXCC_TENANT_ALIASES") or ""
+
+_IDENTITY = f"This server administers exactly ONE Webex Contact Center tenant: " \
+            f"{_LABEL} (profile '{_PROFILE}')."
+if _ALIASES:
+    _IDENTITY += f" This tenant is also called: {_ALIASES}."
+_IDENTITY += (" It CANNOT reach any other tenant. If the user names a different "
+              "tenant, use that tenant's own wxcc-* server instead. Call "
+              "wxcc_whoami to confirm which org you are talking to.")
+
+mcp = FastMCP(f"wxcc-{_PROFILE}", instructions=_IDENTITY)
 
 
 # --------------------------------------------------------------------------- #
@@ -234,16 +250,28 @@ def wxcc_whoami() -> dict:
 
     Run this first when anything looks like an auth problem.
     """
-    cfg = wxcc.load_config()
     tok = wxcc.load_tokens()
     if not tok:
-        return {"authenticated": False,
-                "fix": "run `python wxcc.py auth login` in the repo"}
+        return {"authenticated": False, "profile": _PROFILE, "tenant": _LABEL,
+                "fix": f"WXCC_PROFILE={_PROFILE} python wxcc.py auth login"}
     client = _client()
     status, _ = client.json("GET", _path("site") + "?pageSize=1")
+
+    # Two profiles resolving to the same org means one authenticated to the wrong
+    # tenant (the browser reused an existing Webex session). Surface it here, not
+    # after someone has already written to the wrong place.
+    others = {p: o for p, o in wxcc.all_profile_orgs().items()
+              if o == client.org_id and p not in (_PROFILE, "(default)" if _PROFILE == "default" else "")}
     return {
         "authenticated": True,
+        "tenant": _LABEL,
+        "aliases": _ALIASES or None,
+        "profile": _PROFILE,
         "org_id": client.org_id,
+        "WRONG_TENANT_WARNING": (
+            f"Profile '{_PROFILE}' shares org {client.org_id} with {list(others)}. "
+            "One of them authenticated to the wrong tenant. Do NOT write until fixed."
+        ) if others else None,
         "api_base": client.api_base,
         "granted_scopes": tok.get("granted_scopes", "(not reported by Webex)"),
         "write_capable": "cjp:config_write" in (tok.get("granted_scopes") or ""),

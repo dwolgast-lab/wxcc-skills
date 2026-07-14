@@ -76,16 +76,47 @@ mix:
 | `sandbox` | `.env.sandbox` | `.wxcc/tokens.sandbox.json` |
 | `prod` | `.env.prod` | `.wxcc/tokens.prod.json` |
 
+**A profile is only a label. The tenant is decided by whoever consents in the browser.**
+Copying `.env` and a token file to a new profile name gets you a differently-named pointer
+to the *same* org — it does not move you to a new tenant. You must actually log in as an
+administrator of that tenant.
+
 Authenticate each one once:
 
 ```bash
-WXCC_PROFILE=sandbox python wxcc.py auth login
-WXCC_PROFILE=prod    python wxcc.py auth login
+# bash / Git Bash
+WXCC_PROFILE=prod python wxcc.py auth login
 ```
 
-`python wxcc.py auth status` always prints which profile and org it is talking to.
+```powershell
+# PowerShell — there is no inline env-var prefix; set it, then run
+$env:WXCC_PROFILE = "prod"
+python wxcc.py auth login
+python wxcc.py auth status        # verify the org id before trusting it
+Remove-Item Env:WXCC_PROFILE      # clear it - don't leave a mode set in your shell
+```
 
-Then register **one MCP server per tenant** in `.mcp.json`:
+> **⚠️ Sign out of Webex first, or use a private browser window.** If your browser is
+> already signed in to another Webex identity, the consent screen will silently reuse that
+> session and mint a token for the **wrong tenant** — and it will look like it worked.
+
+**Always confirm with `auth status` afterwards.** It prints the profile *and* the resolved
+`org_id`. If the org id matches a tenant you already had, you authenticated as the wrong
+identity — run `auth logout` for that profile and try again in a clean browser session.
+
+Two things that vary per tenant and are easy to miss:
+
+- **Region.** `WXCC_API_BASE` differs by region (`us1`, `eu1`, `anz1`, …). Only `us1` has
+  been exercised by this project.
+- **The Integration.** One Integration's client ID usually works across orgs, but a
+  corporate Control Hub can **block third-party integrations**. If consent fails or comes
+  back with no CC scopes, register an Integration inside that tenant and give that profile
+  its own client ID and secret.
+
+Then register **one MCP server per tenant** in `.mcp.json` (copy `.mcp.json.example`;
+`.mcp.json` is gitignored, because server names tend to be real customer names). **Name each
+server the way you talk about the tenant** — `wxcc-acme`, not `wxcc-org2` — so that asking
+for "Acme's queues" routes itself:
 
 ```json
 { "mcpServers": {

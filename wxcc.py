@@ -93,6 +93,7 @@ def load_config() -> dict:
         "WXCC_SCOPES",
         "WXCC_API_BASE",
         "WXCC_ORG_ID",
+        "WXCC_TENANT_LABEL",
     ):
         if os.environ.get(key):
             cfg[key] = os.environ[key]
@@ -139,6 +140,56 @@ def save_tokens(tok: dict) -> None:
     store = token_store()
     store.parent.mkdir(parents=True, exist_ok=True)
     store.write_text(json.dumps(tok, indent=2), encoding="utf-8")
+
+
+def all_profile_orgs() -> dict[str, str]:
+    """Map every authenticated profile -> the org its stored token resolves to.
+
+    Two profiles pointing at the same org means one of them authenticated to the
+    wrong tenant - almost always because the browser silently reused an existing
+    Webex session. Cheap to check, and the only reliable way to catch it.
+    """
+    out: dict[str, str] = {}
+    store_dir = REPO_DIR / ".wxcc"
+    if not store_dir.exists():
+        return out
+    for f in store_dir.glob("tokens*.json"):
+        name = "(default)" if f.name == "tokens.json" else f.name[len("tokens."):-len(".json")]
+        try:
+            tok = json.loads(f.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        if tok.get("org_id"):
+            out[name] = tok["org_id"]
+    return out
+
+
+def warn_on_org_collision(this_profile: str, this_org: str | None) -> bool:
+    """Print a loud warning if another profile already resolves to this org."""
+    if not this_org:
+        return False
+    clashes = [p for p, org in all_profile_orgs().items()
+               if org == this_org and p != this_profile]
+    if not clashes:
+        return False
+    print("", file=sys.stderr)
+    print("  !!  WRONG TENANT?  " + "-" * 52, file=sys.stderr)
+    print(f"  !!  Profile '{this_profile}' resolves to org {this_org}", file=sys.stderr)
+    print(f"  !!  ...which is ALREADY used by: {', '.join(clashes)}", file=sys.stderr)
+    print("  !!", file=sys.stderr)
+    print("  !!  Two profiles should never share an org. The browser most likely",
+          file=sys.stderr)
+    print("  !!  reused an existing Webex session instead of asking you to sign in.",
+          file=sys.stderr)
+    print("  !!", file=sys.stderr)
+    print(f"  !!  Fix: WXCC_PROFILE={this_profile} python wxcc.py auth logout",
+          file=sys.stderr)
+    print("  !!       then `auth login` again in a PRIVATE browser window,",
+          file=sys.stderr)
+    print("  !!       signed in as an admin of the tenant you actually want.",
+          file=sys.stderr)
+    print("  " + "-" * 70, file=sys.stderr)
+    return True
 
 
 def extract_org_id(access_token: str) -> str | None:
@@ -303,6 +354,12 @@ def cmd_auth_login(cfg: dict) -> None:
         "redirect_uri": cfg["WXCC_REDIRECT_URI"],
         "scope": cfg["WXCC_SCOPES"],
         "state": state,
+        # Force a fresh sign-in instead of silently reusing whatever Webex
+        # session the browser already holds. Without this, authenticating a
+        # second profile just re-mints a token for the FIRST tenant, and it
+        # looks like it worked. (OIDC prompt=login; ignored if unsupported,
+        # which is why the org-collision check below is the real backstop.)
+        "prompt": "login",
     })
 
     server = HTTPServer((host, port), _CallbackHandler)
@@ -325,9 +382,13 @@ def cmd_auth_login(cfg: dict) -> None:
         "redirect_uri": cfg["WXCC_REDIRECT_URI"],
     })
     tok = _store_token_response(resp)
+    prof = profile() or "(default)"
     print(f"Authorized. Tokens saved to {token_store()}.")
-    print(f"profile: {profile() or '(default)'}")
+    print(f"profile: {prof}")
     print(f"org_id: {tok.get('org_id', '(not resolved - set WXCC_ORG_ID)')}")
+    if warn_on_org_collision(prof, tok.get("org_id")):
+        die("authenticated to a tenant another profile already owns - see above.",
+            code=3)
 
 
 def refresh_tokens(cfg: dict, tok: dict) -> dict:
@@ -372,6 +433,9 @@ def cmd_auth_status(cfg: dict) -> None:
     state = f"valid, ~{remaining // 3600}h left" if remaining > 0 else "EXPIRED (will refresh on next call)"
     print(f"status   : {state}")
     print(f"org_id   : {tok.get('org_id', '(not resolved)')}")
+    if cfg.get("WXCC_TENANT_LABEL"):
+        print(f"tenant   : {cfg['WXCC_TENANT_LABEL']}")
+    warn_on_org_collision(profile() or "(default)", tok.get("org_id"))
 
 
 def cmd_auth_refresh(cfg: dict) -> None:

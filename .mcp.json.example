@@ -1,0 +1,32 @@
+{
+  "_comment": [
+    "Copy to .mcp.json (gitignored) and list YOUR tenants.",
+    "One server per tenant. The server name is what you and Claude will say out loud,",
+    "so name it the way you talk about the tenant - 'wxcc-acme', not 'wxcc-org2'.",
+    "",
+    "The tenant is therefore part of every tool name (mcp__wxcc-acme__wxcc_delete), so",
+    "acting on the wrong tenant requires calling a differently-named tool. There is",
+    "deliberately no 'switch tenant' command - a mutable current-tenant pointer is how a",
+    "delete meant for sandbox lands on production.",
+    "",
+    "Each profile needs its own .env.<profile> and its own `auth login`. Never copy a",
+    "token file between profiles: that gives you a live credential for the WRONG tenant",
+    "wearing the RIGHT name.",
+    "",
+    "A server with no WXCC_PROFILE uses .env + .wxcc/tokens.json. Point that at your",
+    "safest tenant, so an unqualified request lands somewhere harmless."
+  ],
+  "mcpServers": {
+    "wxcc-sandbox": {
+      "type": "stdio",
+      "command": "python",
+      "args": ["mcp_server.py"]
+    },
+    "wxcc-acme": {
+      "type": "stdio",
+      "command": "python",
+      "args": ["mcp_server.py"],
+      "env": { "WXCC_PROFILE": "acme" }
+    }
+  }
+}
