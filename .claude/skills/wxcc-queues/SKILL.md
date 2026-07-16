@@ -1,14 +1,15 @@
 ---
 name: wxcc-queues
-description: Use when asked to list, count, look up, or inspect Webex Contact Center queues / contact service queues (CSQs) - "what queues exist", "find queue X", "queue X's routing type or service level threshold", "which teams serve queue X", "is queue X active", "queue skill requirements". Read-only. Provides the confirmed API entity name (contact-service-queue, NOT queue), paths, filter/search syntax, and traps.
+description: Use when asked to list, count, look up, or inspect Webex Contact Center queues / contact service queues (CSQs) - "what queues exist", "find queue X", "queue X's routing type or service level threshold", "which teams serve queue X", "is queue X active", "queue skill requirements". Read-only.
 ---
 
 # wxcc-queues — list, search, and inspect WxCC queues (read-only)
 
-**The API entity is `contact-service-queue` — the path `queue` does not exist (404).**
-Uses the shared helper `wxcc.py` (repo root); requires a working connection
-(**wxcc-connect**). Every path and parameter below was run against a live tenant
-(149 queues) on 2026-07-10.
+Call the **`wxcc_list` / `wxcc_get`** MCP tools on the server for the tenant the user named
+(`mcp__wxcc-<tenant>__wxcc_list`). **If no tenant was named, ask — do not guess.**
+
+**The entity is `contact-service-queue`.** `queue` is not a thing — it 404s. Pass
+`entity="contact-service-queue"`; the tool rejects unknown entity names rather than guessing.
 
 ## Use when / Do NOT use when
 
@@ -18,71 +19,42 @@ Uses the shared helper `wxcc.py` (repo root); requires a working connection
   call distribution groups (which teams serve it), or skill requirements.
 
 **Do NOT use when:**
-- Auth errors (401 / "not authenticated") → **wxcc-connect**.
-- Resolving the teams referenced by a queue's distribution groups → **wxcc-teams**.
+- Auth errors, or `wxcc_whoami` reports the wrong org → **wxcc-connect**.
+- Resolving the team ids inside `callDistributionGroups` → **wxcc-teams**.
 - Creating/updating/deleting queues → **wxcc-queues-write**.
-
-## Ground rules
-
-- Paths go to `wxcc.py get` **without a leading slash** (see wxcc-connect).
-- List responses paginate (`meta` + `data[]`, pageSize default 100); `get --all` combines
-  all pages. Queue objects are the largest of the config entities — always trim list
-  calls with `attributes=`.
+- Call/contact volume, handle time, or anything time-series → **wxcc-tasks-search**.
+  This skill reads queue *configuration*, not activity.
 
 ## Recipes
 
-### List every queue (id + name)
+| Goal | Call |
+|---|---|
+| Every queue (id + name) | `wxcc_list(entity="contact-service-queue", attributes="id,name", all_pages=true)` |
+| Count only | `wxcc_list(entity="contact-service-queue", page_size=1, attributes="id")` → `meta.totalRecords` |
+| Find by exact name | `wxcc_list(entity="contact-service-queue", filter="name==QUEUE-NAME")` |
+| Keyword search | `wxcc_list(entity="contact-service-queue", search="KEYWORD")` |
+| One queue, full object | `wxcc_get(entity="contact-service-queue", id="QUEUE-ID")` |
 
-```bash
-python wxcc.py get --all "organization/{orgId}/v2/contact-service-queue?attributes=id,name"
-```
+**Queue objects are the largest config entity — always pass `attributes` on list calls**
+unless you genuinely need every field.
 
-### Count queues
-
-```bash
-python wxcc.py get "organization/{orgId}/v2/contact-service-queue?pageSize=1&attributes=id"
-```
-→ read `meta.totalRecords`.
-
-### Find a queue by exact name
-
-```bash
-python wxcc.py get "organization/{orgId}/v2/contact-service-queue?filter=name==QUEUE-NAME&attributes=id,name,active,channelType"
-```
-→ **unquoted** value; quotes cause HTTP 400. Names with spaces untested — candidate:
-URL-encode as `%20`.
-
-### Keyword search
-
-```bash
-python wxcc.py get "organization/{orgId}/v2/contact-service-queue?search=KEYWORD&attributes=id,name"
-```
-
-### Get one queue by id (full object)
-
-```bash
-python wxcc.py get "organization/{orgId}/contact-service-queue/QUEUE-ID-HERE"
-```
-→ fields observed live 2026-07-10 include: `name`, `active`, `channelType`, `queueType`,
+Fields observed live (2026-07-10): `name`, `active`, `channelType`, `queueType`,
 `routingType`, `queueRoutingType`, `serviceLevelThreshold`, `maxTimeInQueue`,
 `maxActiveContacts`, `callDistributionGroups` (team ids serving the queue),
-`queueSkillRequirements`, recording/monitoring permissions, `timezone`. Tenant-observed,
-not contract.
+`queueSkillRequirements`, recording/monitoring permission booleans, `timezone`.
+Tenant-observed, not contract.
 
-## Traps (reproduced live, 2026-07-10)
+## Traps
 
-| Wrong | Result | Right |
+| Trap | Why | Do this |
 |---|---|---|
-| `organization/{orgId}/v2/queue` or `.../queue` | HTTP 404 | Entity is `contact-service-queue` |
+| `entity="queue"` | The path 404s | Use `contact-service-queue` |
 | `filter=name=="X"` (quoted) | HTTP 400 | Unquoted: `filter=name==X` |
-| Non-v2 list `organization/{orgId}/contact-service-queue` | 200 but a **bare unpaginated array** (legacy) | Prefer the `v2` list for `meta`/paging/filtering |
-
-Note an inconsistency vs teams/sites/users: the **v2 item path works for queues**
-(`v2/contact-service-queue/{id}` → 200, verified 2026-07-10). Both forms are valid; these
-recipes use the non-v2 item form for consistency with the other entities.
+| Filter values with spaces | Untested | Candidate: `%20`. Prefer `search=`. |
+| Filterable fields | Only `id`, `name` confirmed | Others are candidates |
 
 ## Provenance and maintenance
 
-All claims run against a live us1 tenant on 2026-07-10 via `wxcc.py`. Re-verify any row by
-running its recipe. Filterable fields confirmed: `id`, `name`; others are candidates.
-Sibling facts (OAuth, pagination shape, leading-slash rule) live in **wxcc-connect**.
+Run against live us1 tenants (2026-07-10, 149 queues; re-confirmed 2026-07-14). Queues are
+the one entity where the v2 item path ALSO works — an inconsistency vs teams/sites/users.
+The tool's registry pins one form, so this no longer matters at call time.

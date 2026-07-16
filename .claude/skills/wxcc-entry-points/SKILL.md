@@ -1,15 +1,15 @@
 ---
 name: wxcc-entry-points
-description: Use when asked about Webex Contact Center entry points or dial numbers (DNs/DIDs) - "what entry points exist", "find entry point X", "what number reaches entry point X", "which entry point does +1719... route to", "list our dial numbers/DIDs", "is entry point X active", "entry point X's channel or flow". Read-only. Provides confirmed paths for both entities, the entryPointId linkage between them, and the raw-plus-sign silent-zero-results trap.
+description: Use when asked about Webex Contact Center entry points or dial numbers (DNs/DIDs) - "what entry points exist", "find entry point X", "what number reaches entry point X", "which entry point does +1719... route to", "list our dial numbers/DIDs", "is entry point X active", "entry point X's channel". Read-only. Covers the entryPointId linkage and the raw-plus-sign silent-zero-results trap.
 ---
 
 # wxcc-entry-points — entry points and their dial numbers (read-only)
 
-Entry points (EPs) and dial numbers (DNs) work hand-in-hand for inbound voice: each DN maps
-a dialed E.164 number to an EP via its `entryPointId`. This skill covers both entities and
-the lookups between them. Uses the shared helper `wxcc.py` (repo root); requires a working
-connection (**wxcc-connect**). Every path and parameter was run against a live tenant
-(118 EPs, 31 DNs) on 2026-07-11.
+Call the **`wxcc_list` / `wxcc_get`** MCP tools on the server for the tenant the user named
+(`mcp__wxcc-<tenant>__wxcc_list`). **If no tenant was named, ask — do not guess.**
+
+Entry points (EPs) and dial numbers (DNs) work together for inbound voice: each DN maps a
+dialed E.164 number to an EP via its `entryPointId`.
 
 ## Use when / Do NOT use when
 
@@ -19,83 +19,55 @@ connection (**wxcc-connect**). Every path and parameter was run against a live t
 - Inspecting an EP's channel type, entry point type, flow tag, timezone, or status.
 
 **Do NOT use when:**
-- Auth errors (401 / "not authenticated") → **wxcc-connect**.
-- The queue a contact lands in after the EP/flow → **wxcc-queues**.
+- Auth errors, or `wxcc_whoami` reports the wrong org → **wxcc-connect**.
+- The queue a contact lands in after the EP → **wxcc-queues**.
 - Creating/updating/deleting EPs or repointing DNs → **wxcc-entry-points-write**.
-
-## Ground rules
-
-- Paths go to `wxcc.py get` **without a leading slash** (see wxcc-connect).
-- Lists paginate (`meta` + `data[]`); `get --all` combines pages; trim with `attributes=`.
-- DN objects have **no `name` field**. Their key fields: `dialledNumber` (E.164 with `+`,
-  note the double-L spelling), `dialledNumberDigits` (digits only), `entryPointId`,
-  `defaultAni`, `location`, `regionId`.
+- The FLOW an entry point runs → Cisco's **flow-store** MCP server. This skill sees only
+  the `flowTagId` reference, not the flow itself.
 
 ## Recipes — entry points
 
-### List / count / find
+| Goal | Call |
+|---|---|
+| Every EP | `wxcc_list(entity="entry-point", attributes="id,name,channelType,active", all_pages=true)` |
+| Count only | `wxcc_list(entity="entry-point", page_size=1, attributes="id")` → `meta.totalRecords` |
+| Find by exact name | `wxcc_list(entity="entry-point", filter="name==EP-NAME")` |
+| Keyword search | `wxcc_list(entity="entry-point", search="KEYWORD")` |
+| One EP, full object | `wxcc_get(entity="entry-point", id="EP-ID")` |
 
-```bash
-python wxcc.py get --all "organization/{orgId}/v2/entry-point?attributes=id,name,channelType,active"
-python wxcc.py get "organization/{orgId}/v2/entry-point?pageSize=1&attributes=id"   # meta.totalRecords = count
-python wxcc.py get "organization/{orgId}/v2/entry-point?filter=name==EP-NAME&attributes=id,name"
-python wxcc.py get "organization/{orgId}/v2/entry-point?search=KEYWORD&attributes=id,name"
-```
-Filter values are **unquoted** (quotes → HTTP 400).
-
-### Get one entry point by id (full object)
-
-```bash
-python wxcc.py get "organization/{orgId}/entry-point/EP-ID-HERE"
-```
-→ fields observed live 2026-07-11: `name`, `active`, `channelType`, `entryPointType`,
+Fields observed live (2026-07-11): `name`, `active`, `channelType`, `entryPointType`,
 `socialChannelType`, `flowTagId`, `maximumActiveContacts`, `timezone`, `description`,
-`systemInternal`. Tenant-observed, not contract. Item path has **no v2** (v2 → 404).
+`systemInternal`. Tenant-observed, not contract.
 
 ## Recipes — dial numbers
 
-### List all dial numbers
+| Goal | Call |
+|---|---|
+| All DNs | `wxcc_list(entity="dial-number", attributes="id,dialledNumber,entryPointId", all_pages=true)` |
+| Numbers reaching EP X | `wxcc_list(entity="dial-number", filter="entryPointId==EP-ID")` |
+| **Which EP does a number route to** | `wxcc_list(entity="dial-number", filter="dialledNumberDigits==15551234567")` → resolve the returned `entryPointId` with `wxcc_get(entity="entry-point", ...)` |
+| One DN | `wxcc_get(entity="dial-number", id="DN-ID")` |
 
-```bash
-python wxcc.py get --all "organization/{orgId}/v2/dial-number?attributes=id,dialledNumber,entryPointId"
-```
+**DN objects have no `name` field.** Key fields: `dialledNumber` (E.164 with `+`, note the
+double-L), `dialledNumberDigits` (digits only), `entryPointId`, `defaultAni`, `location`,
+`regionId`.
 
-### Which numbers reach entry point X?
+## Traps
 
-```bash
-python wxcc.py get "organization/{orgId}/v2/dial-number?filter=entryPointId==EP-ID-HERE"
-```
-
-### Which entry point does a number route to?
-
-Prefer the digits-only field — no URL-encoding pitfalls:
-
-```bash
-python wxcc.py get "organization/{orgId}/v2/dial-number?filter=dialledNumberDigits==15551234567"
-```
-
-then resolve the returned `entryPointId` with the get-one-EP recipe. Filtering on
-`dialledNumber` requires encoding the plus as `%2B` (`filter=dialledNumber==%2B15551234567`).
-
-### Get one dial number by id
-
-```bash
-python wxcc.py get "organization/{orgId}/dial-number/DN-ID-HERE"
-```
-
-## Traps (each reproduced live, 2026-07-11)
-
-| Wrong | Result | Right |
+| Trap | Result | Do this |
 |---|---|---|
-| `filter=dialledNumber==+1719...` (raw `+`) | **HTTP 200 with 0 records — silent wrong answer** (`+` decodes to a space) | Use `dialledNumberDigits==1719...`, or encode `%2B1719...` |
-| `v2/entry-point/{id}` or `v2/dial-number/{id}` | HTTP 404 | Item paths have no v2 |
-| `v2/dialed-number` (single-L spelling) | HTTP 404 | Entity is `dial-number`; fields spell it `dialledNumber` |
-| `filter=name==...` quoted | HTTP 400 | Unquoted values |
-| `filter=name==...` on dial-number | n/a — DNs have no `name` field | Filter DNs by `entryPointId`, `dialledNumber`, or `dialledNumberDigits` |
+| `filter=dialledNumber==+1719...` (raw `+`) | **HTTP 200 with 0 records — a silent wrong answer.** The `+` decodes to a space. | Use `dialledNumberDigits==1719...`, or encode `%2B1719...` |
+| `filter=name==...` on a dial-number | Meaningless — DNs have no name | Filter by `entryPointId`, `dialledNumber`, or `dialledNumberDigits` |
+| Quoted filter values | HTTP 400 | Unquoted |
+| Filterable fields | EP: `id`, `name`. DN: `entryPointId`, `dialledNumber`, `dialledNumberDigits` | Others are candidates |
+| `search=` on dial-number | **Untested — candidate** | Confirmed on EP only |
+
+The raw-`+` trap is the worst kind: it does not error, it answers "no numbers found" and
+looks correct. If a number lookup comes back empty, retry with `dialledNumberDigits`
+before telling the user the number is not mapped.
 
 ## Provenance and maintenance
 
-All claims run against a live us1 tenant on 2026-07-11 via `wxcc.py`; re-verify any row by
-running its recipe. Filterable fields confirmed — EP: `id`, `name`; DN: `entryPointId`,
-`dialledNumber`, `dialledNumberDigits`. `search=` confirmed on EP; **untested on DN**
-(candidate). Sibling facts (OAuth, pagination, leading-slash rule) live in **wxcc-connect**.
+Run against a live us1 tenant 2026-07-11 (118 EPs, 31 DNs); re-confirmed 2026-07-14.
+Entity naming (`dial-number` path vs `dialledNumber` field) and the `+` trap reproduced
+live. Path shape is handled by the tool's registry.

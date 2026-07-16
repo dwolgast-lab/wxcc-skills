@@ -1,13 +1,15 @@
 ---
 name: wxcc-entry-points-write
-description: Use when asked to create, update, or delete a Webex Contact Center entry point, or to change a dial number's entry-point mapping - "create an entry point for X", "change entry point X's service level", "repoint +1555... to entry point Y", "delete entry point X". Mutating - requires cjp:config_write scope and explicit user confirmation before each write. Provides verified EP POST/PUT/DELETE recipes and the dial-number write rules, including why new numbers cannot be invented here.
+description: Use when asked to create, update, or delete a Webex Contact Center entry point, or to change a dial number's entry-point mapping - "create an entry point for X", "change entry point X's service level", "repoint +1555... to entry point Y", "delete entry point X". Mutating - requires cjp:config_write and explicit user confirmation. Covers why a brand-new phone number cannot be created here.
 ---
 
-# wxcc-entry-points-write — create, update, delete EPs; repoint dial numbers
+# wxcc-entry-points-write — create/update/delete EPs; repoint dial numbers
 
-Mutating counterpart to **wxcc-entry-points** (reads). EP lifecycle verified end-to-end
-against a live sandbox tenant on 2026-07-11 (create 201, update 200, delete 204, baseline
-restored). Dial-number writes have a hard constraint — see below.
+Mutating counterpart to **wxcc-entry-points**. Call `wxcc_create` / `wxcc_update` /
+`wxcc_delete` on the server for the tenant the user named. **If no tenant was named, ask.**
+
+**EPs are live routing infrastructure.** A mistaken delete or repoint breaks call delivery
+immediately, for real callers. Treat every write here as production-grade even in a sandbox.
 
 ## Use when / Do NOT use when
 
@@ -15,99 +17,86 @@ restored). Dial-number writes have a hard constraint — see below.
 
 **Do NOT use when:**
 - Listing/finding EPs or DNs → **wxcc-entry-points**.
-- Auth errors or missing write scope → **wxcc-connect**.
-- "Add a brand-new phone number" → **not possible here**: numbers must already exist in
-  the Webex Calling location inventory (Control Hub / Calling admin owns provisioning).
+- Auth errors or 403 on write → **wxcc-connect**.
+- **"Add a brand-new phone number"** → **not possible here.** See the DN section.
+- Attaching or authoring the FLOW an EP runs → Cisco's **flow-store** MCP server.
 
-## Safety rules
+## How the write tools protect you
 
-Same non-negotiables as **wxcc-teams-write**: confirm before every write, name the
-rollback first (delete is effectively irreversible), verify after with a read, expect 403
-without `cjp:config_write`. EPs are routing infrastructure — a mistaken delete or repoint
-breaks live call delivery immediately.
+Call without `confirm` → nothing is written; you get the tenant, a diff (or what would be
+destroyed), and the rollback. Show it, get an explicit yes, re-call with `confirm=true`.
+Watch **`TENANT`** (first field), **`SILENTLY_IGNORED`**, and **`blocked`**.
 
-## Recipes — entry points
+## Entry points
 
-### Create an entry point
+```
+wxcc_create(entity="entry-point", fields={
+  "name": "EP-NAME", "entryPointType": "INBOUND", "channelType": "TELEPHONY",
+  "serviceLevelThreshold": 20, "active": true, "maximumActiveContacts": 0
+})
 
-Required fields discovered by validation (400 names them if missing): `serviceLevelThreshold`
-(> 0), `active`, `maximumActiveContacts` (>= 0), plus name/type/channel:
-
-```bash
-python wxcc.py post "organization/{orgId}/entry-point" --body '{"name":"EP-NAME","entryPointType":"INBOUND","channelType":"TELEPHONY","serviceLevelThreshold":20,"active":true,"maximumActiveContacts":0}'
+wxcc_update(entity="entry-point", id="EP-ID", changes={"serviceLevelThreshold": 25})
+wxcc_delete(entity="entry-point", id="EP-ID")            # preview first
 ```
 
-→ verify: HTTP 201 with the object; **capture `id`**. Server defaults observed: `timezone`
-(tenant default), `callbackEnabled: false`. `entryPointType` is `INBOUND` or `OUTBOUND`
-(both observed live). A new EP has no flow attached (`flowId` absent) — attach flows in
-the admin portal; flow assignment via this API is untested (candidate).
+Required on create (a 400 names them otherwise): `serviceLevelThreshold` (> 0), `active`,
+`maximumActiveContacts` (>= 0), plus name/type/channel. `entryPointType` is `INBOUND` or
+`OUTBOUND` (both observed). Server defaults: `timezone` (tenant default),
+`callbackEnabled: false`.
 
-### Update an entry point
+A new EP has **no flow attached**. Flow assignment via this API is untested (**candidate**)
+— flows are flow-store's job.
 
-Capture current state first (rollback), then PUT the full object with `id` in the body:
+Delete: **no rollback.** Deleting an EP that still has dial numbers attached is untested
+(**candidate** — expect a 412-style refusal like referenced skills). Check the DN→EP lookup
+in **wxcc-entry-points** and repoint first.
 
-```bash
-python wxcc.py get "organization/{orgId}/entry-point/EP-ID"    # capture prior state
-python wxcc.py put "organization/{orgId}/entry-point/EP-ID" --body '{"id":"EP-ID","name":"EP-NAME","description":"...","entryPointType":"INBOUND","channelType":"TELEPHONY","serviceLevelThreshold":25,"active":true,"maximumActiveContacts":0,"timezone":"America/New_York"}'
+## Dial numbers — read this before promising anything
+
+**You cannot invent a phone number here.** A DN record *maps* a number that already exists
+in the Webex Calling location inventory. Provisioning lives in Control Hub / Calling admin.
+
+The live validation chain, reproduced in order: missing `location` → 400, then missing
+`regionId` → 400, then — with a fictional number — **HTTP 404 "Dialed number does not
+exist"**. Note it is a **404, not a 400**: the API is saying the number is not in inventory,
+which reads like a broken endpoint if you are not expecting it.
+
+```
+wxcc_create(entity="dial-number", fields={
+  "dialledNumber": "+15551234567", "entryPointId": "EP-ID",
+  "location": "LOCATION-ID", "regionId": "REGION-ID"
+})
 ```
 
-→ verify: HTTP 200, then re-read to confirm (verified live: SLT + description change
-persisted). Rollback = PUT the captured prior object back.
+Copy `location`/`regionId` from a sibling DN at the same site. **A full 201 has never been
+observed** — no free provisioned number was available to test (**candidate**).
 
-### Delete an entry point
+### Repoint a number to a different EP
 
-```bash
-python wxcc.py delete "organization/{orgId}/entry-point/EP-ID"
+```
+wxcc_update(entity="dial-number", id="DN-ID", changes={"entryPointId": "NEW-EP-ID"})
 ```
 
-→ verify: HTTP 204, then `filter=name==...` on the v2 list returns 0. **No true rollback.**
-Deleting an EP that still has dial numbers or flows attached is untested (candidate —
-expect a 412-style refusal as seen on referenced skills); check `wxcc-entry-points`'s
-DN→EP lookup and repoint/remove first.
+The tool does the read-modify-write, carrying `location`/`regionId`/`defaultAni` through
+unchanged. The PUT contract is verified (idempotent PUT → 200); **changing `entryPointId`
+specifically is untested (candidate)** — re-read and confirm the mapping moved.
 
-## Recipes — dial numbers
+### Delete a DN mapping
 
-### Repoint a number to a different entry point
+`wxcc_delete(entity="dial-number", ...)` is **refused by the registry**: it is unprobed and
+would unmap a live number. If genuinely needed, do it deliberately in the portal.
 
-DN update is a full-object PUT (shape verified live via an idempotent PUT, 200):
-
-```bash
-python wxcc.py get "organization/{orgId}/dial-number/DN-ID"    # capture prior state
-python wxcc.py put "organization/{orgId}/dial-number/DN-ID" --body '{"id":"DN-ID","dialledNumber":"+15551234567","entryPointId":"NEW-EP-ID","defaultAni":false,"location":"LOCATION-ID","regionId":"REGION-ID"}'
-```
-
-Copy `location`/`regionId`/`defaultAni` unchanged from the GET. Changing `entryPointId` to
-a different EP is the one field you'd edit — that specific change is untested (candidate);
-the PUT contract itself is verified. Verify with a re-read; rollback = PUT the prior body.
-
-### Map a number to an EP (create a DN record)
-
-```bash
-python wxcc.py post "organization/{orgId}/dial-number" --body '{"dialledNumber":"+15551234567","entryPointId":"EP-ID","location":"LOCATION-ID","regionId":"REGION-ID"}'
-```
-
-Field requirements verified by the live validation chain (missing `location` → 400,
-then missing `regionId` → 400). The final gate: the number **must already exist in the
-Calling location's inventory**, else HTTP **404 "Dialed number does not exist"**
-(reproduced live). Copy `location`/`regionId` from a sibling DN at the same site.
-Full 201 not yet observed — no free provisioned number in the sandbox (candidate).
-
-### Delete a DN mapping — **candidate, destructive**
-
-`DELETE organization/{orgId}/dial-number/DN-ID` is documented in Cisco's collection but
-deliberately unprobed here (it would unmap a real number). Confirm emphatically first.
-
-## Traps (observed live, 2026-07-11)
+## Traps
 
 | Item | Detail |
 |---|---|
-| Fictional/unprovisioned number on DN create | HTTP **404** (not 400) "Dialed number does not exist" |
-| Missing EP required fields | 400 names each one — read `reason` before retrying |
-| Write paths have no `v2` | POST/PUT/DELETE on `organization/{orgId}/entry-point[/{id}]`, `.../dial-number[/{id}]` |
-| DN PUT is full-replace | Send every field from the GET, not just the change |
+| Unprovisioned number on DN create | **404** (not 400) "Dialed number does not exist" |
+| Field spelling | Path is `dial-number`; field is `dialledNumber` (double L) |
+| DN update is full-replace | The tool handles it — do not hand-build partial bodies |
+| EP required fields | A 400's `reason` names each one — read it before retrying |
 
 ## Provenance and maintenance
 
-EP create/update/delete run live on a us1 sandbox 2026-07-11 (201/200/204, probe object
-removed). DN: required-field chain + inventory 404 reproduced live; idempotent PUT 200
-verified; create-201/delete unprobed (candidates). Re-verify with a `zz-` named EP cycle.
+EP create/update/delete run live on a us1 sandbox 2026-07-11 (201/200/204, probe removed).
+DN: required-field chain and the inventory 404 reproduced live; idempotent PUT 200 verified;
+create-201 and delete remain candidates. Re-verify with a `zz-` named EP cycle.

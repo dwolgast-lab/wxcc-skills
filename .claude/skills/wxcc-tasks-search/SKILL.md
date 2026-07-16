@@ -1,91 +1,89 @@
 ---
 name: wxcc-tasks-search
-description: Use when asked about Webex Contact Center calls/contacts/tasks or agent activity data - "how many calls did we take yesterday", "show recent calls to +1555...", "what tasks are queued right now", "when did this customer last call", "agent login sessions this week". Read-only reporting via the GraphQL Search API (POST /search) and the REST tasks API (GET /v1/tasks). Not for tenant configuration - this is interaction data, not admin config.
+description: Use when asked about Webex Contact Center calls/contacts/tasks or agent activity data - "how many calls did we take yesterday", "show recent calls to +1555...", "what tasks are queued right now", "when did this customer last call", "agent login sessions this week". Read-only reporting over interaction data via the GraphQL Search API. Not for tenant configuration.
 ---
 
-# wxcc-tasks-search — interaction data: tasks, calls, agent sessions (read-only)
+# wxcc-tasks-search — calls, tasks, and agent sessions (read-only reporting)
 
-Two read APIs over the same interaction data: the **GraphQL Search API**
-(`POST search?orgId={orgId}` — flexible fields, filters, aggregation) and the simpler
-**REST tasks API** (`GET v1/tasks`). Both verified against a live tenant on 2026-07-11
-(65 historical tasks + agent sessions returned). These paths sit at the **API host root**
-— they are *not* under `organization/{orgId}`.
+Call **`wxcc_search_tasks`** on the server for the tenant the user named.
+**If no tenant was named, ask — do not guess.**
+
+**This is interaction data, not configuration.** Queue *settings* → **wxcc-queues**.
+Call *volume through* a queue → here.
 
 ## Use when / Do NOT use when
 
-**Use when:** counting/finding calls or tasks, real-time queued contacts, customer
-interaction history, agent session/login data, wallboard-style aggregates.
+**Use when:** counting or listing calls/tasks, looking up a contact's history, checking
+what is queued now, or reading agent session/state activity.
 
 **Do NOT use when:**
-- Tenant config (queues, teams, EPs...) → the domain skills (wxcc-queues, wxcc-teams, ...).
-- Registering for event pushes → **wxcc-webhooks**.
+- Any tenant configuration → the entity skills (**wxcc-queues**, **wxcc-teams**, …).
 - Auth errors → **wxcc-connect**.
+- Recording media or transcripts → not covered here.
 
-## Ground rules
+## How to call it
 
-- Timestamps are **epoch milliseconds**. Get them with:
-  `python -c "import time; print(int(time.time()*1000) - 7*24*3600*1000)"` (7 days back).
-- `{orgId}` substitution works anywhere in the path string, including query params.
-- GraphQL bodies are JSON: `{"query": "{ ... }"}`. Quoting gets hairy inline — prefer
-  `--body @query.json`.
+`wxcc_search_tasks(query="<a GraphQL document>")`. The tool posts it to the Search API and
+returns the result.
 
-## Recipes — GraphQL search
-
-### Tasks in a time window
-
-```bash
-python wxcc.py post "search?orgId={orgId}" --body '{"query":"{ task(from: FROM_MS, to: TO_MS, pagination: { cursor: \"0\" }) { tasks { id createdTime channelType direction status isActive origin destination totalDuration lastQueue { name } lastEntryPoint { name } owner { name } } pageInfo { endCursor hasNextPage } } }"}'
+```
+wxcc_search_tasks(query="""
+{ task(from: 1720000000000, to: 1720600000000, first: 50) {
+    tasks { id status channelType queue { name } createdTime }
+    pageInfo { hasNextPage }
+} }
+""")
 ```
 
-All field names above verified live. `from`/`to` are **required** (400 names them if
-missing). Never-answered tasks return `owner.name`/`lastQueue.name` as null. Paginate by
-passing `pageInfo.endCursor` back as the next `cursor`.
+Three roots: **`task`** (contacts/interactions), **`agentSession`** (login sessions and
+state), **`taskDetails`** (per-task detail).
 
-### Filters (verified pattern)
+## The rule that will bite you first
 
-Inside `task(...)`: `filter: { and: [ { channelType: { equals: telephony } },
-{ direction: { equals: "inbound" } }, { isActive: { equals: true } } ] }` — that
-combination is Cisco's real-time-queued-tasks query. Enum-ish values (`telephony`) are
-bare; strings are quoted. `timeComparator: createdTime` (or `endedTime`) picks which
-timestamp `from`/`to` compare against.
+**`from` and `to` are REQUIRED on every root, in epoch MILLISECONDS.**
 
-### Agent sessions
+- Omit them → `400 Missing field argument`.
+- Pass **seconds** → the query succeeds and **silently returns nothing.** No error. A
+  10-digit timestamp means 1970, so the window is empty and it looks like "no calls."
 
-```bash
-python wxcc.py post "search?orgId={orgId}" --body '{"query":"{ agentSession(from: FROM_MS, to: TO_MS) { agentSessions { agentId agentName startTime endTime } pageInfo { hasNextPage } } }"}'
-```
+If a query returns zero rows, check the timestamp width before telling the user there were
+no calls. This is the single most likely way to give a confidently wrong answer here.
 
-→ verified live. A third root, `taskDetails`, also exists (same required `from`/`to`).
+Compute the window from the user's intent ("yesterday", "this week") and **state the window
+you used** in your answer so they can catch a mistake.
 
-### Aggregates (candidate)
+## Aggregations
 
-Cisco's collection shows `aggregation:`/`aggregations:` blocks (sum/count/average/max
-over duration fields, e.g. calls-per-queue wallboards) — **not yet run here**; expect to
-iterate on syntax against the 400s, which are precise.
+Cisco's Postman collection shows aggregation syntax (counts, group-bys) for wallboard-style
+numbers. **Untested here — candidate.** If you use it, say the shape is unverified and
+sanity-check the result against a plain `task` count over the same window.
 
-## Recipes — REST tasks list
+## The REST alternative
 
-```bash
-python wxcc.py get "v1/tasks?from=FROM_MS&channelTypes=telephony&pageSize=10"
-```
+`GET v1/tasks?from=<ms>&channelTypes=telephony` exists and is verified, with hard limits:
 
-→ `data[]` of `{id, attributes: {owner, queue, channelType, status, createdTime, origin,
-destination, direction, captureRequested}}`. `from` is **required**; `channelTypes` is
-optional; there is **no `v1/tasks/{id}` item path** (404, reproduced live).
+| Limit | Detail |
+|---|---|
+| Window | **≤ 184 days** between `from` and `to` |
+| Lookback | `from` **≤ 12 months** ago |
+| Item path | **There is no `/v1/tasks/{id}`** — 404 |
 
-## Traps (each reproduced live, 2026-07-11)
+It is not exposed as an MCP tool (the GraphQL root covers the same ground with more
+control). Reach for the CLI only if you need it — and note the CLI uses whatever tenant
+`WXCC_PROFILE` resolves to, **not** the MCP server you were just using.
 
-| Wrong | Result | Right |
-|---|---|---|
-| `v1/tasks` window > 184 days, or `from` > 12 months ago | HTTP 400 (message states both limits) | Chunk long lookbacks |
-| GraphQL root without `from`/`to` | HTTP 400 "Missing field argument" | Always pass both (epoch ms) |
-| Seconds instead of milliseconds | Empty results, no error | Epoch **ms** everywhere |
-| `GET v1/tasks/{id}` | HTTP 404 | Filter the search APIs by `id` instead |
+## Traps
+
+| Item | Detail |
+|---|---|
+| Seconds instead of milliseconds | Silent empty result — no error |
+| Missing `from`/`to` | 400 "Missing field argument" |
+| Host-root API | `POST search?orgId={orgId}`, not under `organization/{orgId}` — the tool handles this |
+| Aggregations | Collection-sourced, unrun — candidate |
 
 ## Provenance and maintenance
 
-Run live on a us1 sandbox 2026-07-11: task + agentSession queries (fields as shown),
-v1/tasks constraints from real 400s. Filter/aggregation syntax beyond what is marked
-verified comes from Cisco's Postman collection (v3, Aug 2023) — treat as candidate and
-lean on the API's precise validation errors. Results contain real caller numbers — treat
-output as sensitive.
+GraphQL `task` and `agentSession` roots run live on a us1 sandbox 2026-07-11 (65 real tasks
+returned). The millis requirement, the 400 on missing args, the REST 184-day/12-month
+limits, and the absent item path were each reproduced. Aggregation syntax is from Cisco's
+Postman collection (v3, Aug 2023) and remains a candidate.

@@ -1,13 +1,16 @@
 ---
 name: wxcc-teams
-description: Use when asked to list, count, look up, or inspect Webex Contact Center teams - "what teams exist", "find team X", "which site is team X at", "what skill profile or desktop layout does team X use", "is team X active", "show team X's queue rankings". Read-only. Provides the confirmed Teams API paths, filter/search/attributes syntax, and the v2-on-item-path 404 trap.
+description: Use when asked to list, count, look up, or inspect Webex Contact Center teams - "what teams exist", "find team X", "which site is team X at", "what skill profile or desktop layout does team X use", "is team X active", "show team X's queue rankings". Read-only. Covers the team entity's fields, filter/search syntax, and the traps that survive into the tool layer.
 ---
 
 # wxcc-teams — list, search, and inspect WxCC teams (read-only)
 
-Uses the shared helper `wxcc.py` (repo root); requires a working connection
-(**wxcc-connect**). Every path and parameter below was run against a live tenant
-(245 teams) on 2026-07-10.
+Call the **`wxcc_list` / `wxcc_get`** MCP tools on the server for the tenant the user named
+(`mcp__wxcc-<tenant>__wxcc_list`). **If no tenant was named, ask — do not guess.** See the
+repo's CLAUDE.md for the nickname → server map.
+
+Every result carries a `tenant` field naming the org it came from. Read it: that is the
+ground truth, not the server's name.
 
 ## Use when / Do NOT use when
 
@@ -16,64 +19,44 @@ Uses the shared helper `wxcc.py` (repo root); requires a working connection
 - Inspecting a team's site, skill profile, desktop layout, type, status, or queue rankings.
 
 **Do NOT use when:**
-- Auth errors (401 / "not authenticated") → **wxcc-connect**.
+- Auth errors, or `wxcc_whoami` reports the wrong org → **wxcc-connect**.
 - Resolving a team's site id to site details → **wxcc-sites**.
 - Creating/renaming/updating/deleting teams → **wxcc-teams-write**.
-
-## Ground rules
-
-- Paths go to `wxcc.py get` **without a leading slash** (see wxcc-connect).
-- List responses paginate (`meta` + `data[]`, pageSize default 100); `get --all` combines
-  all pages. Trim with `attributes=` — full team objects are sizeable.
+- Assigning a USER to a team → **wxcc-users-write** (membership lives on the user's
+  `teamIds`, not on the team).
 
 ## Recipes
 
-### List every team (id + name)
+| Goal | Call |
+|---|---|
+| Every team (id + name) | `wxcc_list(entity="team", attributes="id,name", all_pages=true)` |
+| Count only | `wxcc_list(entity="team", page_size=1, attributes="id")` → read `meta.totalRecords` |
+| Find by exact name | `wxcc_list(entity="team", filter="name==TEAM-NAME")` |
+| Keyword search | `wxcc_list(entity="team", search="KEYWORD")` |
+| One team, full object | `wxcc_get(entity="team", id="TEAM-ID")` |
 
-```bash
-python wxcc.py get --all "organization/{orgId}/v2/team?attributes=id,name"
-```
+Full team objects are sizeable — pass `attributes` to trim unless you need everything.
 
-### Count teams without transferring them
-
-```bash
-python wxcc.py get "organization/{orgId}/v2/team?pageSize=1&attributes=id"
-```
-→ read `meta.totalRecords`.
-
-### Find a team by exact name
-
-```bash
-python wxcc.py get "organization/{orgId}/v2/team?filter=name==TEAM-NAME&attributes=id,name,siteName,active"
-```
-→ `meta.totalRecords` should be 1. **Unquoted** value; quotes cause HTTP 400.
-Names containing spaces are untested as filter values — candidate: URL-encode as `%20`.
-
-### Keyword search
-
-```bash
-python wxcc.py get "organization/{orgId}/v2/team?search=KEYWORD&attributes=id,name"
-```
-
-### Get one team by id (full object)
-
-```bash
-python wxcc.py get "organization/{orgId}/team/TEAM-ID-HERE"
-```
-→ fields observed live 2026-07-10: `name`, `active`, `teamType`, `teamStatus`, `siteId`,
+Fields observed live (2026-07-10): `name`, `active`, `teamType`, `teamStatus`, `siteId`,
 `siteName`, `skillProfileId`, `desktopLayoutId`, `rankQueuesForTeam`, `queueRankings`,
-`createdTime`, `lastUpdatedTime`. Tenant-observed, not contract.
+`userIds`, `createdTime`, `lastUpdatedTime`. Tenant-observed, not contract.
 
-## Traps (reproduced live, 2026-07-10)
+`teamType` is `AGENT` or `CAPACITY`. A CAPACITY team models external/non-Webex agents and
+has no desktop seats behind it — say so rather than treating it like an agent team.
 
-| Wrong | Result | Right |
+## Traps
+
+| Trap | Why | Do this |
 |---|---|---|
-| `organization/{orgId}/v2/team/TEAM-ID` | HTTP 404 | Item path has **no v2**: `organization/{orgId}/team/TEAM-ID` |
 | `filter=name=="X"` (quoted) | HTTP 400 | Unquoted: `filter=name==X` |
-| Non-v2 list `organization/{orgId}/team` | 200 but a **bare unpaginated array** (legacy) | Prefer the `v2` list for `meta`/paging/filtering |
+| Filter values containing spaces | Untested | Candidate: URL-encode as `%20`. Prefer `search=`. |
+| Filterable fields | Only `id` and `name` are confirmed | Others are candidates — verify before relying |
+
+Path shape, the v2-on-item-path 404, and pagination are handled by the tool's entity
+registry (`mcp_server.py`); you no longer pass paths by hand.
 
 ## Provenance and maintenance
 
-All claims run against a live us1 tenant on 2026-07-10 via `wxcc.py`. Re-verify any row by
-running its recipe. Filterable fields confirmed: `id`, `name`; others are candidates.
-Sibling facts (OAuth, pagination shape, leading-slash rule) live in **wxcc-connect**.
+Field list and filter syntax run against live us1 tenants (2026-07-10; re-confirmed on
+three tenants 2026-07-14). Re-verify a row by running its call. The `wxcc.py` CLI still
+works and takes raw paths — use it only to debug the server itself, not for routine work.

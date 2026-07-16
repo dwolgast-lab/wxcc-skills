@@ -1,79 +1,50 @@
 ---
 name: wxcc-sites
-description: Use when asked to list, count, look up, or inspect Webex Contact Center sites - "what sites exist", "find site X", "is site X active", "site X's multimedia profile", or resolving a siteId found on a team to its details. Read-only. Provides the confirmed Sites API paths, filter/search/attributes syntax, and the v2-on-item-path 404 trap.
+description: Use when asked to list, count, look up, or inspect Webex Contact Center sites - "what sites exist", "find site X", "is site X active", "site X's multimedia profile", or resolving a siteId found on a team to its details. Read-only - site writes are not supported by these tools.
 ---
 
 # wxcc-sites — list, search, and inspect WxCC sites (read-only)
 
-Uses the shared helper `wxcc.py` (repo root); requires a working connection
-(**wxcc-connect**). Every path and parameter below was run against a live tenant
-(68 sites) on 2026-07-10.
+Call the **`wxcc_list` / `wxcc_get`** MCP tools on the server for the tenant the user named
+(`mcp__wxcc-<tenant>__wxcc_list`). **If no tenant was named, ask — do not guess.**
 
 ## Use when / Do NOT use when
 
 **Use when:**
 - Listing or counting sites; finding a site by name, id, or keyword.
-- Resolving a `siteId` (e.g. from a team object) to the site's details.
+- Resolving a `siteId` (e.g. from a team or user object) to the site's details.
 
 **Do NOT use when:**
-- Auth errors (401 / "not authenticated") → **wxcc-connect**.
-- Working with the teams at a site → **wxcc-teams** (filter teams client-side by `siteId`).
-- Creating or modifying sites → no write skill exists yet; needs `cjp:config` scope
-  (wxcc-connect "Adding write access"). Do not improvise writes.
-
-## Ground rules
-
-- Paths go to `wxcc.py get` **without a leading slash** (see wxcc-connect).
-- List responses paginate (`meta` + `data[]`, pageSize default 100); `get --all` combines
-  all pages. Site objects are small — trimming with `attributes=` is optional here.
+- Auth errors, or `wxcc_whoami` reports the wrong org → **wxcc-connect**.
+- Working with the teams at a site → **wxcc-teams** (filter by `siteId`).
+- **Creating or modifying sites** → not supported. `wxcc_create`/`wxcc_update`/`wxcc_delete`
+  will refuse `site`: writes have never been probed against a live tenant, so the registry
+  does not claim them. Do not improvise via the CLI.
 
 ## Recipes
 
-### List every site (id + name)
+| Goal | Call |
+|---|---|
+| Every site (id + name) | `wxcc_list(entity="site", attributes="id,name", all_pages=true)` |
+| Count only | `wxcc_list(entity="site", page_size=1, attributes="id")` → `meta.totalRecords` |
+| Find by exact name | `wxcc_list(entity="site", filter="name==SITE-NAME")` |
+| Keyword search | `wxcc_list(entity="site", search="KEYWORD")` |
+| One site, full object | `wxcc_get(entity="site", id="SITE-ID")` |
 
-```bash
-python wxcc.py get --all "organization/{orgId}/v2/site?attributes=id,name"
-```
+Site objects are small — `attributes` is optional here.
 
-### Count sites
-
-```bash
-python wxcc.py get "organization/{orgId}/v2/site?pageSize=1&attributes=id"
-```
-→ read `meta.totalRecords`.
-
-### Find a site by exact name
-
-```bash
-python wxcc.py get "organization/{orgId}/v2/site?filter=name==SITE-NAME&attributes=id,name,active"
-```
-→ **unquoted** value; quotes cause HTTP 400. Names with spaces untested — candidate:
-URL-encode as `%20`.
-
-### Keyword search
-
-```bash
-python wxcc.py get "organization/{orgId}/v2/site?search=KEYWORD&attributes=id,name"
-```
-
-### Get one site by id (full object)
-
-```bash
-python wxcc.py get "organization/{orgId}/site/SITE-ID-HERE"
-```
-→ fields observed live 2026-07-10: `id`, `name`, `active`, `multimediaProfileId`,
+Fields observed live (2026-07-10): `id`, `name`, `active`, `multimediaProfileId`,
 `createdTime`, `lastUpdatedTime`. Tenant-observed, not contract.
 
-## Traps (reproduced live, 2026-07-10)
+## Traps
 
-| Wrong | Result | Right |
+| Trap | Why | Do this |
 |---|---|---|
-| `organization/{orgId}/v2/site/SITE-ID` | HTTP 404 | Item path has **no v2**: `organization/{orgId}/site/SITE-ID` |
 | `filter=name=="X"` (quoted) | HTTP 400 | Unquoted: `filter=name==X` |
-| Non-v2 list `organization/{orgId}/site` | 200 but a **bare unpaginated array** (legacy) | Prefer the `v2` list for `meta`/paging/filtering |
+| Filter values with spaces | Untested | Candidate: `%20`. Prefer `search=`. |
+| Filterable fields | Only `id`, `name` confirmed | Others are candidates |
 
 ## Provenance and maintenance
 
-All claims run against a live us1 tenant on 2026-07-10 via `wxcc.py`. Re-verify any row by
-running its recipe. Filterable fields confirmed: `id`, `name`; others are candidates.
-Sibling facts (OAuth, pagination shape, leading-slash rule) live in **wxcc-connect**.
+Run against live us1 tenants (2026-07-10; re-confirmed 2026-07-14). Site writes remain
+unprobed — that is why the tools refuse them, and it is a deliberate gap, not an oversight.

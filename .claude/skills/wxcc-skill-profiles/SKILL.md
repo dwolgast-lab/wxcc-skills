@@ -1,16 +1,16 @@
 ---
 name: wxcc-skill-profiles
-description: Use when asked about Webex Contact Center routing skills or skill profiles - "what skills exist in the tenant", "find skill X", "is skill X text or proficiency type", "what skill profiles do we have", "which skills are in profile X", "what profile does team X use". Read-only. Provides confirmed paths for both the skill and skill-profile entities and their query syntax.
+description: Use when asked about Webex Contact Center routing skills or skill profiles - "what skills exist in the tenant", "find skill X", "is skill X text or proficiency type", "what skill profiles do we have", "which skills are in profile X", "what profile does team X use". Read-only.
 ---
 
 # wxcc-skill-profiles — routing skills and skill profiles (read-only)
 
-CC routing skills (competencies like "Development" with a type and service level) and skill
-profiles (named bundles of skill values assigned to teams/agents) work as a pair: profiles
-carry `activeSkills`/`activeEnumSkills`, and teams reference a `skillProfileId`
-(see **wxcc-teams**). Uses the shared helper `wxcc.py` (repo root); requires a working
-connection (**wxcc-connect**). Every path and parameter was run against a live tenant
-(127 skills, 51 profiles) on 2026-07-11.
+Call the **`wxcc_list` / `wxcc_get`** MCP tools on the server for the tenant the user named
+(`mcp__wxcc-<tenant>__wxcc_list`). **If no tenant was named, ask — do not guess.**
+
+Two entities working as a pair: **`skill`** is a competency (a name, a type, a service
+level); **`skill-profile`** is a named bundle of skill *values* that teams and agents
+reference via `skillProfileId`.
 
 ## Use when / Do NOT use when
 
@@ -20,70 +20,53 @@ connection (**wxcc-connect**). Every path and parameter was run against a live t
 - Inspecting which skills a profile contains, or resolving a team's `skillProfileId`.
 
 **Do NOT use when:**
-- Auth errors (401 / "not authenticated") → **wxcc-connect**.
+- Auth errors, or `wxcc_whoami` reports the wrong org → **wxcc-connect**.
 - Which team uses a given profile → **wxcc-teams** (teams carry `skillProfileId`).
-- Queue skill requirements → **wxcc-queues** (`queueSkillRequirements` on the queue).
+- Queue skill requirements → **wxcc-queues** (`queueSkillRequirements`).
 - Creating or editing skills/profiles → **wxcc-skill-profiles-write**.
-
-## Ground rules
-
-- Paths go to `wxcc.py get` **without a leading slash** (see wxcc-connect).
-- Lists paginate (`meta` + `data[]`); `get --all` combines pages; trim with `attributes=`.
-- Filter values are **unquoted** (quotes → HTTP 400). Item paths have **no v2** (v2 → 404).
 
 ## Recipes — skills
 
-### List / count / find
+| Goal | Call |
+|---|---|
+| Every skill | `wxcc_list(entity="skill", attributes="id,name,skillType,active", all_pages=true)` |
+| Count only | `wxcc_list(entity="skill", page_size=1, attributes="id")` → `meta.totalRecords` |
+| Find by exact name | `wxcc_list(entity="skill", filter="name==SKILL-NAME")` |
+| Keyword search | `wxcc_list(entity="skill", search="KEYWORD")` |
+| One skill, full | `wxcc_get(entity="skill", id="SKILL-ID")` |
 
-```bash
-python wxcc.py get --all "organization/{orgId}/v2/skill?attributes=id,name,skillType,active"
-python wxcc.py get "organization/{orgId}/v2/skill?pageSize=1&attributes=id"   # meta.totalRecords = count
-python wxcc.py get "organization/{orgId}/v2/skill?filter=name==SKILL-NAME&attributes=id,name,skillType"
-python wxcc.py get "organization/{orgId}/v2/skill?search=KEYWORD&attributes=id,name"
-```
-
-### Get one skill by id (full object)
-
-```bash
-python wxcc.py get "organization/{orgId}/skill/SKILL-ID-HERE"
-```
-→ fields observed live 2026-07-11: `name`, `active`, `skillType`, `dynamicSkill`,
-`serviceLevelThreshold`, `systemDefault`, `description`. Tenant-observed, not contract.
+Fields observed live (2026-07-11): `name`, `active`, `skillType`, `dynamicSkill`,
+`serviceLevelThreshold`, `systemDefault`, `description`. `skillType` is `BOOLEAN`,
+`PROFICIENCY`, `TEXT`, or `ENUM` — an ENUM skill also carries `enumSkillValues`, each with
+its own id.
 
 ## Recipes — skill profiles
 
-### List / count / find
+| Goal | Call |
+|---|---|
+| Every profile | `wxcc_list(entity="skill-profile", attributes="id,name", all_pages=true)` |
+| Find by exact name | `wxcc_list(entity="skill-profile", filter="name==PROFILE-NAME")` |
+| **What is inside profile X** | `wxcc_get(entity="skill-profile", id="PROFILE-ID")` |
+| Which profile does team X use | `wxcc_get(entity="team", id=...)` → `skillProfileId`, then fetch here |
 
-```bash
-python wxcc.py get --all "organization/{orgId}/v2/skill-profile?attributes=id,name"
-python wxcc.py get "organization/{orgId}/v2/skill-profile?pageSize=1&attributes=id"
-python wxcc.py get "organization/{orgId}/v2/skill-profile?filter=name==PROFILE-NAME&attributes=id,name"
-python wxcc.py get "organization/{orgId}/v2/skill-profile?search=KEYWORD&attributes=id,name"
-```
+A profile's contents live in two separate arrays, and the distinction matters:
 
-### What's inside profile X?
+- **`activeSkills`** — non-enum skills: `{id, skillId, booleanValue | proficiencyValue |
+  textValue}`. The `id` is the *entry's* own sub-entity id, not the skill's.
+- **`activeEnumSkills`** — enum skills, keyed by `enumSkillValueId` only.
 
-```bash
-python wxcc.py get "organization/{orgId}/skill-profile/PROFILE-ID-HERE"
-```
-→ `activeSkills` and `activeEnumSkills` hold the skill values; resolve each skill id with
-the get-one-skill recipe. Exact sub-structure of the skill-value entries is tenant-observed
-— read what comes back rather than assuming a shape.
+Read what comes back rather than assuming a shape; sub-entity ids are what make writes work
+(**wxcc-skill-profiles-write**).
 
-### Which profile does team X use?
+## Traps
 
-Get the team (**wxcc-teams**) and read `skillProfileId`, then fetch that profile here.
-
-## Traps (each reproduced live, 2026-07-11)
-
-| Wrong | Result | Right |
+| Trap | Why | Do this |
 |---|---|---|
-| `v2/skill/{id}` or `v2/skill-profile/{id}` | HTTP 404 | Item paths have no v2 |
-| `filter=name=="X"` (quoted) | HTTP 400 | Unquoted: `filter=name==X` |
-| Non-v2 list paths (`.../skill`) | 200 but a **bare unpaginated array** (legacy) | Prefer the `v2` list |
+| `filter=name=="X"` (quoted) | HTTP 400 | Unquoted |
+| Filterable fields | Only `id`, `name` confirmed on both | Others are candidates |
+| Assuming one skills array | Enum and non-enum skills live in **different** arrays | Check both |
 
 ## Provenance and maintenance
 
-All claims run against a live us1 tenant on 2026-07-11 via `wxcc.py`; re-verify any row by
-running its recipe. Filterable fields confirmed: `id`, `name` on both entities; others are
-candidates. Sibling facts (OAuth, pagination, leading-slash) live in **wxcc-connect**.
+Run against a live us1 tenant 2026-07-11 (127 skills, 51 profiles); re-confirmed
+2026-07-14. Path shape and pagination are handled by the tool's registry.

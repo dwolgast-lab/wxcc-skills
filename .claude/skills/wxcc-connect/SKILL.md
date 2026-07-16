@@ -1,146 +1,108 @@
 ---
 name: wxcc-connect
-description: Use when first setting up Webex Contact Center (WxCC) admin access, or when a wxcc.py call fails with "not authenticated", HTTP 401, an expired/invalid token, or a redirect/scope mismatch during consent. Covers registering the OAuth Integration on developer.webex.com, filling .env, running the one-time consent flow, and verifying connectivity with a read call. Run this before any other wxcc-* admin skill.
+description: Use when first setting up Webex Contact Center (WxCC) admin access, when adding a new tenant, or when anything fails with "not authenticated", HTTP 401/403, an expired/invalid token, a scope mismatch, or a tool reporting the WRONG ORG. Covers the OAuth Integration, per-tenant profiles, local vs cloud MCP servers, and the browser-session trap.
 ---
 
-# wxcc-connect — set up and verify WxCC API access
+# wxcc-connect — get connected, to the tenant you actually meant
 
-This skill establishes the OAuth connection that every other `wxcc-*` skill depends on.
-It is done once per machine (plus occasional re-auth). All API calls go through the shared
-helper `wxcc.py` at the repo root.
+## First: which tenant?
 
-## Use when / Do NOT use when
+**Every tenant is a separate MCP server.** The tenant is part of the tool name
+(`mcp__wxcc-gold__wxcc_list`), so acting on the wrong one requires calling a
+differently-named tool. There is deliberately **no "switch tenant" command** — a mutable
+current-tenant pointer is how a delete meant for sandbox lands on production.
 
-**Use when:**
-- Setting up WxCC admin access on a new machine for the first time.
-- A `wxcc.py` call fails with `not authenticated`, HTTP `401`, or a token error.
-- Consent fails with a redirect-URI or scope mismatch.
-- You need to add write scopes (see "Adding write access" below).
+**If the user has not named a tenant, ask.** The nickname → server map lives in the repo's
+CLAUDE.md (gitignored — it names real customers). Never infer a tenant from a name you have
+not been told.
 
-**Do NOT use when:**
-- You are already connected (`python wxcc.py auth status` shows `valid`) and want to perform
-  a specific admin task → use the matching `wxcc-<domain>` skill for that task.
-- You need to change the helper's code itself → that is a development change to `wxcc.py`,
-  not this runbook.
+**`wxcc_whoami` is the ground truth.** It reports the tenant's *own* name (from
+`GET organization/{orgId}`, not a configured label) plus `[PRODUCTION]` or `[trial/sandbox]`.
+Run it whenever anything looks off.
 
-## Definitions
+## One-time setup
 
-| Term | Meaning |
-|---|---|
-| Integration | A Webex OAuth app (user-context, authorization-code flow) registered at developer.webex.com. Yields a `client_id` + `client_secret`. |
-| Scope | An OAuth permission string. `cjp:config_read` = read CC config; `cjp:config` = write. The authorizing user must be a WxCC administrator. |
-| orgId | Your tenant's Contact Center org identifier, injected into API paths as `{orgId}`. Auto-derived from the token; overridable via `WXCC_ORG_ID`. |
-| API host | Region-specific runtime host, e.g. `https://api.wxcc-us1.cisco.com`. Set via `WXCC_API_BASE`. |
-| Token store | `.wxcc/tokens.json` (gitignored). Holds access + refresh tokens and expiry. |
+1. **Register an Integration** at developer.webex.com (Manage Apps → Create an Integration):
+   - Redirect URI: `http://localhost:8484/callback`
+   - Scopes: `cjp:config_read cjp:config cjp:config_write` (read-only? just the first)
+   - The authorizing user must be a **CC administrator of that tenant**.
+2. **`cp .env.example .env`** and fill in client id/secret and `WXCC_API_BASE`
+   (region-specific — only `us1` has ever been exercised here).
+3. **`python wxcc.py auth login`**, then **`python wxcc.py auth status`** → expect `valid`
+   plus the granted scopes.
 
-## Prerequisites
+## Adding another tenant
 
-- Python 3 on PATH. → verify: `python --version`
-- A Webex account with **Contact Center administrator** privileges on the target tenant.
+```powershell
+# 1. Config file - copy the .env, NEVER copy a token file
+#    (a copied token is a live credential for the WRONG tenant wearing the RIGHT name)
+cp .env .env.<profile>        # set WXCC_API_BASE (region!), WXCC_TENANT_LABEL, WXCC_TENANT_ALIASES
 
-## Procedure
-
-### 1. Register an OAuth Integration (one time, in a browser)
-
-Go to **developer.webex.com** (the converged portal — the old `developer.webex-cx.com` is
-deprecated) and create a new **Integration**. As of 2026-07-10 this is under your profile
-menu → "My Webex Apps" → "Create a New App" → "Integration"; if the labels differ, follow
-the portal's official guide: https://developer.webex.com/docs/integrations
-
-Set these fields:
-- **Redirect URI:** `http://localhost:8484/callback` (must match `WXCC_REDIRECT_URI` exactly).
-- **Scopes:** select `cjp:config_read` (add `cjp:config` only when you need write skills).
-
-Save. Copy the generated **Client ID** and **Client Secret**.
-
-### 2. Fill in `.env`
-
-From the repo root:
-
-```bash
-cp .env.example .env      # PowerShell: Copy-Item .env.example .env
-```
-
-Edit `.env` and set `WXCC_CLIENT_ID`, `WXCC_CLIENT_SECRET`, and `WXCC_API_BASE` to your
-region's host. Leave `WXCC_REDIRECT_URI` and `WXCC_SCOPES` at their defaults unless you
-changed them in step 1. `.env` is gitignored — never commit it.
-
-> Region note: only `api.wxcc-us1.cisco.com` (US) is confirmed here. For other regions, set
-> `WXCC_API_BASE` to your tenant's host (find it in your CC admin portal / Cisco docs).
-
-### 3. Run the one-time consent flow
-
-```bash
+# 2. Authenticate AS THAT TENANT'S ADMIN
+$env:WXCC_PROFILE = "<profile>"
 python wxcc.py auth login
+python wxcc.py auth status    # org_id MUST be unique across profiles
+Remove-Item Env:WXCC_PROFILE
 ```
 
-This opens a browser to Webex, where you sign in as the admin and approve the scopes. The
-helper catches the redirect on `localhost:8484`, exchanges the code for tokens, and saves
-them to `.wxcc/tokens.json`. On success it prints your `org_id`.
+Then add a server to `.mcp.json` named **the way you talk about the tenant**
+(`wxcc-acme`, not `wxcc-org2`), add a row to the alias table, and restart Claude Code.
 
-### 4. Verify connectivity
+**`WXCC_PROFILE` picks `.env.<profile>` + `.wxcc/tokens.<profile>.json`.** The profile name
+must match the `.env.<profile>` filename exactly — a mismatch makes the server report
+`authenticated: false` while looking for a file that does not exist.
 
-```bash
-python wxcc.py auth status
-```
-→ verify: prints `status : valid, ~NNNh left` and a non-empty `org_id`.
+PowerShell has **no inline env-var prefix**: `$env:VAR = "x"` on its own line.
+`VAR=x cmd` is bash-only.
 
-Then confirm a real read against the tenant (List Users is a confirmed read endpoint):
+## ⚠️ The browser-session trap — this has caused three wrong-tenant logins
 
-```bash
-python wxcc.py get "organization/{orgId}/v2/user"
-```
-→ verify: prints a JSON body with `meta` (pagination) and `data` (users). This proves auth,
-org resolution, region host, and scope are all correct end-to-end.
+Authenticating a second profile while your browser still holds a Webex session **silently
+mints a token for the FIRST tenant — and it looks like it worked.** `wxcc.py` sends
+`prompt=login`, but **that is not enough**; the browser hands back whoever it already knows.
 
-**Always pass API paths WITHOUT a leading slash.** Git Bash (MSYS) rewrites a leading-slash
-argument into a `C:/Program Files/Git/...` filesystem path before Python sees it; the
-no-slash form works identically in every shell (verified in Git Bash and PowerShell,
-2026-07-10).
+**What actually works:**
+
+- **Local:** `python wxcc.py auth login` prints the authorize URL. Paste it into a
+  **private/incognito window you opened yourself**, or sign out of Webex first.
+- **Cloud:** `claude mcp login <server> --no-browser` — it prints the URL instead of opening
+  one. Paste it into a private window, then paste the redirect URL back.
+- **Never rely on remembering to use incognito.** A rule that has failed three times is not
+  a control.
+
+**Local detection (automatic):** two profiles resolving to the same `org_id` is almost
+always this mistake. `auth login` now **refuses** it (exit 3), `auth status` warns loudly,
+and `wxcc_whoami` returns `WRONG_TENANT_WARNING`.
+
+**The cloud server cannot do this** — it is stateless and sees one token at a time. There,
+the only check is reading the org name back from `wxcc_whoami`. Do it.
+
+## Local vs cloud servers
+
+| | Local (stdio) | Cloud (Cloud Run) |
+|---|---|---|
+| Config | `.env.<profile>` + local token store | none — the caller's token decides the org |
+| Auth | `python wxcc.py auth login` | `claude mcp login <server> --no-browser` |
+| Wrong-tenant detection | Yes, cross-profile | **No** — stateless |
+| Needs repo + Python | Yes | No |
+
+Both expose the same tools. The cloud server holds **zero** Webex credentials.
 
 ## Troubleshooting
 
 | Symptom | Cause / fix |
 |---|---|
-| Browser shows redirect-URI error | The URI in the Integration ≠ `WXCC_REDIRECT_URI`. Make them identical, including scheme, host, port, and `/callback`. |
-| `state mismatch on callback` | A stale/duplicate browser tab answered. Re-run `auth login` and use the freshly opened tab. |
-| HTTP `401` on `get` | Token expired or scope missing. Try `python wxcc.py auth refresh`; if it persists, re-run `auth login`. Confirm the authorizing user is a CC admin. |
-| `org id is unknown` / 404 on org | Auto-derivation from the token failed. Set `WXCC_ORG_ID` in `.env` to your tenant's CC org id. |
-| `bad URL ... C:/Program Files/Git/...` | Git Bash mangled a leading-slash path. Re-run with the path's leading `/` removed. |
-| Reads work but writes 403 | You only have `cjp:config_read`. See "Adding write access". |
-| Wrong/empty data | `WXCC_API_BASE` points at the wrong region. Set it to your tenant's host. |
-
-## Adding write access (later)
-
-Write skills need the `cjp:config_write` scope (confirmed working 2026-07-11; Cisco's
-Postman collection requests the triple `cjp:config cjp:config_read cjp:config_write`).
-To add it: make sure the Integration on developer.webex.com includes those scopes, set
-`WXCC_SCOPES=cjp:config_read cjp:config cjp:config_write` in `.env` (space-separated, no
-quotes), then re-run `python wxcc.py auth login` to re-consent. Scopes registered on the
-app are NOT on your token until a login requests them — `auth status` shows a `granted :`
-line with what the stored token actually carries.
+| `authenticated: false` on a server that used to work | Profile name ≠ `.env.<profile>` filename, or the token was cleared. Check `auth status` for that profile. |
+| **403 on a write, 200 on reads** | Token lacks `cjp:config_write`. Re-consent with the wider scope: `auth logout` then `auth login`. Scopes on the *app* are not on the *token* until re-consent. |
+| 401 everywhere | Token expired past its refresh window (~14d access / ~90d rolling refresh) → `auth login`. |
+| `wxcc_whoami` shows an unexpected org | **Stop.** Wrong-tenant login. `auth logout` that profile (or `claude mcp logout <server>`) and redo it in a private window. |
+| `.mcp.json` server "awaiting approval" | Run `claude` interactively in the repo and approve. Renaming a server invalidates its prior approval. |
+| Server missing entirely (Windows) | Drive-letter case: `--scope local` keys to the cwd's case, so `C:\` and `c:\` are two records. Use `--scope project` / `.mcp.json`. |
+| `Invalid Host header` from the cloud server | Its host is not in the SDK's DNS-rebinding allowlist — a deploy config issue, not auth. |
 
 ## Provenance and maintenance
 
-Facts below were confirmed on 2026-07-10 from official Webex docs (fetched that day), by
-running the helper locally, and by a successful end-to-end run (consent + List Users read)
-against a live us1 tenant on 2026-07-10.
-
-- OAuth endpoints `https://webexapis.com/v1/authorize` and `/v1/access_token`; access token
-  ~14 days, refresh token ~90 days rolling — doc'd from developer.webex.com OAuth guide,
-  2026-07-10; re-verify: `curl -s -o /dev/null -w "%{http_code}" https://developer.webex.com/docs/understanding-oauth-flow-of-webex-integration` (expect 200, then re-read).
-- Register Integration on developer.webex.com; `developer.webex-cx.com` deprecated — per
-  operator (2026-07-10) and the converged-portal announcement.
-- CC read scope `cjp:config_read` (write `cjp:config`); authorizing user must be a CC admin —
-  doc'd from the Webex CC API authentication blog, 2026-07-10.
-- API host `https://api.wxcc-us1.cisco.com` and List Users path `organization/{orgId}/v2/user` —
-  ran against a live tenant 2026-07-10 (HTTP 200, real user data).
-- orgId derived from the substring after the token's final `_` — **verified** against a live
-  tenant 2026-07-10 (derived org id returned real data). `WXCC_ORG_ID` still overrides it.
-- Pagination: responses carry `meta.page`, `meta.pageSize` (default 100), `meta.totalPages`,
-  `meta.totalRecords`, and `meta.links.next|self|first|last`; pages requested via
-  `?page=N&pageSize=N` — observed in a live List Users response, 2026-07-10.
-- Leading-slash paths break under Git Bash (MSYS path conversion) — reproduced and fixed-by-
-  convention 2026-07-10; re-verify: run step 4's command in Git Bash.
-- Helper interface (`auth login|status|refresh|logout`, `get PATH`) — ran locally 2026-07-10;
-  re-verify: `python wxcc.py --help`.
+OAuth endpoints, the ~14d/~90d token lifetimes, and the scope names were confirmed live
+(2026-07-10/11). The `oauth.scopes` override, per-server-name token isolation, and the
+cloud auth chain were verified end-to-end 2026-07-14/16 against three tenants. The
+browser-session trap is documented from three real occurrences, not theory.

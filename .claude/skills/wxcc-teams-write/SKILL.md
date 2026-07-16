@@ -1,13 +1,12 @@
 ---
 name: wxcc-teams-write
-description: Use when asked to create, rename, update, activate/deactivate, move, or delete a Webex Contact Center team - "create a team called X on site Y", "rename team X", "deactivate team X", "delete team X", "change team X's site/status/type". Mutating operations - requires the cjp:config_write scope and explicit user confirmation before each write. Provides the verified POST/PUT/DELETE recipes with rollback steps.
+description: Use when asked to create, rename, update, activate/deactivate, move, or delete a Webex Contact Center team - "create a team called X on site Y", "rename team X", "deactivate team X", "delete team X", "change team X's site/status/type". Mutating - requires cjp:config_write and explicit user confirmation before each write. Covers the create fields, the reference-blocked delete, and how membership actually works.
 ---
 
 # wxcc-teams-write — create, update, and delete WxCC teams
 
-Mutating counterpart to **wxcc-teams** (reads). Uses the shared helper `wxcc.py`. Every
-recipe below was run end-to-end against a live sandbox tenant on 2026-07-11 (create 201,
-update 200, delete 204, tenant restored to baseline).
+Mutating counterpart to **wxcc-teams**. Call `wxcc_create` / `wxcc_update` / `wxcc_delete`
+on the server for the tenant the user named. **If no tenant was named, ask — do not guess.**
 
 ## Use when / Do NOT use when
 
@@ -15,84 +14,87 @@ update 200, delete 204, tenant restored to baseline).
 
 **Do NOT use when:**
 - Listing/finding/inspecting teams → **wxcc-teams**.
-- Auth errors or missing write scope → **wxcc-connect** ("Adding write access").
-- Changing which queues route to a team → that lives on the queue
-  (`callDistributionGroups`) — **wxcc-queues** for reads; no queue write skill yet.
+- Auth errors or 403 on write → **wxcc-connect**.
+- **Adding or removing a team's MEMBERS** → **wxcc-users-write**. Membership lives on the
+  user's `teamIds`, not on the team. The team object shows `userIds` read-only.
+- Changing which queues route to a team → the queue's `callDistributionGroups`,
+  **wxcc-queues-write**.
 
-## Safety rules (non-negotiable)
+## How the write tools protect you
 
-1. **Confirm before every write.** State exactly what will change and get an explicit yes
-   from the user first — a green read is authorization to read, not to write.
-2. **Name the rollback before writing.** Create → rollback is DELETE the new id. Update →
-   rollback is PUT the prior values (capture them with a GET first). Delete → effectively
-   irreversible (recreate loses the id and any references) — treat with the most care.
-3. **Verify after every write** with a read (recipes below), and report the delta.
-4. Writes need `cjp:config_write` on the token — check `python wxcc.py auth status`
-   (`granted :` line). 403 on write = scope missing → wxcc-connect.
+Every write is a two-step, enforced by the server — you do not have to remember it:
 
-## Prerequisites
+1. Call without `confirm` → **nothing is written.** You get back the tenant, a field-level
+   diff (or the object that would be destroyed), and the rollback.
+2. Show that to the user, get an explicit yes, then re-call with `confirm=true`.
 
-- A working connection with write scopes granted (**wxcc-connect**).
-- For create: a `siteId` from **wxcc-sites**.
+After a confirmed write the tool **re-reads and diffs**. Watch for:
 
-## Recipes
+- **`TENANT`** — first field in every write result. Confirm it is the tenant the user meant
+  *before* passing `confirm=true`. `[PRODUCTION]` means a real customer tenant.
+- **`SILENTLY_IGNORED`** — the API returns 200 while dropping fields. If this is non-null,
+  the write did **not** fully apply. Tell the user; do not report success.
+- **`blocked` + `conflicting_references`** — a delete refused because other objects still
+  point at this team. Resolve those first; do not retry.
 
-### Create a team
+## Create
 
-Minimal verified body — `name`, `active`, `siteId`, `teamStatus`, `teamType`:
-
-```bash
-python wxcc.py post "organization/{orgId}/team" --body '{"name":"TEAM-NAME","active":true,"siteId":"SITE-ID-HERE","teamStatus":"IN_SERVICE","teamType":"AGENT"}'
+```
+wxcc_create(entity="team", fields={
+  "name": "TEAM-NAME", "active": true, "siteId": "SITE-ID",
+  "teamStatus": "IN_SERVICE", "teamType": "AGENT"
+})
 ```
 
-→ verify: HTTP 201 and the response echoes the created object **including its `id`** —
-capture it; it is the handle for update/delete/rollback. Optional fields seen in Cisco's
-official Postman collection (candidates, not run here): `desktopLayoutId`,
-`multimediaProfileId`. `teamType` is `AGENT` (or `CAPACITY` for capacity-based teams —
-untested, candidate).
+All five fields are required — the tool checks before calling, and the API would otherwise
+400 naming them. `siteId` comes from **wxcc-sites**. `teamType` is `AGENT`, or `CAPACITY`
+for a team of external/non-Webex agents (no desktop seats).
 
-For complex bodies prefer a file: `--body @team.json` (see `wxcc.py --help`; `--body -`
-reads stdin).
+Optional, from Cisco's Postman collection, **candidates — never run here**:
+`desktopLayoutId`, `multimediaProfileId`. Omitting them means "tenant default", which is how
+you get the Global desktop layout — there is no "set to Global" value.
 
-### Update a team (rename, deactivate, change status/site)
+Rollback: `wxcc_delete` the returned id.
 
-PUT the full object with `id` included — capture current state first for rollback:
+## Update
 
-```bash
-python wxcc.py get "organization/{orgId}/team/TEAM-ID-HERE"    # capture prior state
-python wxcc.py put "organization/{orgId}/team/TEAM-ID-HERE" --body '{"id":"TEAM-ID-HERE","name":"NEW-NAME","active":true,"siteId":"SITE-ID-HERE","teamStatus":"IN_SERVICE","teamType":"AGENT"}'
+```
+wxcc_update(entity="team", id="TEAM-ID", changes={"name": "NEW-NAME"})
 ```
 
-→ verify: HTTP 200 and the response shows the new values; confirm with
-`filter=name==NEW-NAME` on the v2 list (**wxcc-teams**). Rollback = PUT the captured
-prior values back.
+Read-modify-write: the tool GETs the current object, merges `changes`, and PUTs the whole
+thing (this API replaces, it does not patch). Pass only the fields you want changed.
+Rollback is in the dry run's `diff` under `from`.
 
-### Delete a team
+## Delete
 
-```bash
-python wxcc.py delete "organization/{orgId}/team/TEAM-ID-HERE"
+```
+wxcc_delete(entity="team", id="TEAM-ID")           # preview: shows userIds + any blockers
+wxcc_delete(entity="team", id="TEAM-ID", confirm=true)
 ```
 
-→ verify: HTTP 204, then `filter=name==...` returns `totalRecords: 0`. **No true
-rollback** — recreating produces a new id; anything referencing the old id (queue
-distribution groups, agent assignments) stays broken. Confirm emphatically before delete.
+**Reference-blocked (confirmed live 2026-07-14):** a team with users on it returns
+**HTTP 412** `referencedEntities: ["user"]`. The tool pre-flights this and returns
+`conflicting_references` naming each user, so clear the team from their `teamIds`
+(**wxcc-users-write**) first.
 
-## Traps and notes (observed live, 2026-07-11)
+**No rollback.** Recreating yields a new id; queue distribution groups and anything else
+holding the old id stay broken. Confirm emphatically.
+
+## Traps and notes
 
 | Item | Detail |
 |---|---|
-| Legacy write form | A `?teamDTO=<urlencoded-json>` query-param POST also exists in the wild (portal-generated samples). Works, but these recipes use the plain JSON body — cleaner and verified. |
-| DELETE not in Cisco's Postman collection | It works anyway (204, verified live). Absence from samples ≠ absence from API. |
-| `version` field | Created objects carry `version: 0`. PUT without `version` succeeded; optimistic-locking behavior under concurrent edits is untested (candidate). |
-| Write paths have no `v2` | Same convention as team reads' item path. |
-| Deleting referenced teams | Untested what happens when the team is in a queue's `callDistributionGroups` — check the queue (**wxcc-queues**) before deleting (candidate). |
+| Membership is on the USER | `teamIds` on the user, not on the team. A user can hold several teams at once (confirmed 2026-07-14). |
+| The API reorders `teamIds` | Sent `[old, new]`, got `[new, old]`. Never depend on order. |
+| Legacy write form | A `?teamDTO=<urlencoded-json>` query-param POST exists in portal samples. Works, but the JSON body is what is verified here. |
+| DELETE absent from Cisco's Postman collection | It works anyway (204, verified). Absence from samples ≠ absence from API. |
+| `version` field | Created objects carry `version: 0`. Optimistic locking under concurrent edits is untested (candidate). |
 
 ## Provenance and maintenance
 
-Create/update/delete each run against a live us1 sandbox tenant on 2026-07-11 via
-`wxcc.py` (201/200/204), with post-write verification reads and baseline restoration
-(5 teams before and after). Optional create fields sourced from Cisco's official WxCC
-Postman collection (v3, Aug 2023) — labeled candidate until run. Scope naming
-(`cjp:config_write`) confirmed by consent + `auth status` granted-scopes line, 2026-07-11.
-Re-verify any recipe by running the full create→verify→delete cycle with a `zz-` prefixed
-throwaway name.
+Full create→update→delete lifecycle run against a live us1 sandbox (2026-07-11: 201/200/204,
+baseline restored) and re-verified through the MCP tools 2026-07-14, including the 412
+reference block and the confirmed-delete path. Optional create fields come from Cisco's
+Postman collection (v3, Aug 2023) and are candidates until run. Re-verify with a `zz-`
+prefixed throwaway.

@@ -5,13 +5,16 @@ description: Use when asked about Webex Contact Center Desktop Profiles (histori
 
 # wxcc-desktop-profiles — agent desktop behavior profiles (read + update)
 
-**Terminology: these are Desktop Profiles.** The API entity is still named
-`agent-profile` purely for backwards compatibility — use "Desktop Profile" in every
-user-facing sentence, and `agent-profile` in every API path.
+Call the `wxcc_*` MCP tools with `entity="agent-profile"` on the server for the tenant the
+user named. **If no tenant was named, ask — do not guess.**
+
+**Terminology: these are Desktop Profiles.** The API entity is still named `agent-profile`
+purely for backwards compatibility — use "Desktop Profile" in every user-facing sentence,
+and `agent-profile` in every tool call.
 
 A Desktop Profile governs an agent's desktop experience: auto-answer/auto-wrap, which
 idle/wrap-up codes, queues, entry points, and buddy teams are visible, outdial permission
-and ANI, screen-pop, and timeout behavior. Users reference one via `agentProfileId`
+and ANI, screen-pop, and timeouts. Users reference one via `agentProfileId`
 (**wxcc-users**).
 
 ## Use when / Do NOT use when
@@ -19,53 +22,56 @@ and ANI, screen-pop, and timeout behavior. Users reference one via `agentProfile
 **Use when:** listing/inspecting Desktop Profiles or updating one's settings.
 
 **Do NOT use when:**
-- Auth errors → **wxcc-connect**. Writes without `cjp:config_write` → 403.
+- Auth errors or 403 on write → **wxcc-connect**.
 - Assigning a profile TO a user → **wxcc-users-write** (`agentProfileId`).
 - The aux codes / ANIs / queues themselves → **wxcc-aux-codes**, **wxcc-outdial-ani**,
   **wxcc-queues**.
-- Desktop Layout (screen arrangement JSON) → **wxcc-desktop-layouts**.
+- Desktop **Layout** (the screen arrangement JSON) → **wxcc-desktop-layouts**. Layouts are
+  screens; profiles are behavior.
 
 ## Reads
 
-```bash
-python wxcc.py get --all "organization/{orgId}/v2/agent-profile?attributes=id,name,active"
-python wxcc.py get "organization/{orgId}/agent-profile/PROFILE-ID"    # item path: no v2
-```
+| Goal | Call |
+|---|---|
+| All profiles | `wxcc_list(entity="agent-profile", attributes="id,name,active", all_pages=true)` |
+| One profile, full | `wxcc_get(entity="agent-profile", id="PROFILE-ID")` |
 
-Key fields (observed live 2026-07-11, ~46 total): `autoAnswer`, `autoWrapUp`,
+Key fields (~46 total, observed live 2026-07-11): `autoAnswer`, `autoWrapUp`,
 `autoWrapAfterSeconds`, `accessIdleCode`/`idleCodes`, `accessWrapUpCode`/`wrapUpCodes`,
 `accessQueue`/`queues`, `accessEntryPoint`/`entryPoints`, `accessBuddyTeam`/`buddyTeams`,
-`outdialEnabled`/`outdialANIId`/`outdialEntryPointId`, `screenPopup`, `viewableStatistics`,
-`loginVoiceOptions`, `parentType`, `systemDefault`. The `access*` fields are ALL/SPECIFIC
-switches paired with id-list fields. `dialPlanEnabled`/`dialPlans` still appear in
-responses but Dial Plan is **deprecated in WxCC** — ignore them; do not build on them.
+`outdialEnabled`/`outdialANIId`/`outdialEntryPointId`, `screenPopup`,
+`viewableStatistics`, `loginVoiceOptions`, `parentType`, `systemDefault`.
 
-## Update — safety rules of **wxcc-teams-write** apply (confirm first, name rollback, verify after)
+The `access*` fields are **ALL/SPECIFIC switches paired with id-list fields** — reading the
+id list alone will mislead you if the switch says ALL.
 
-Full-object replace, verified by a live no-op PUT (200, 2026-07-11):
+`dialPlanEnabled`/`dialPlans` still appear in responses but **Dial Plan is DEPRECATED in
+WxCC** — ignore them; do not build on them.
 
-```bash
-python wxcc.py get "organization/{orgId}/agent-profile/PROFILE-ID" > profile.json   # capture = rollback
-# edit profile.json: strip "links"/"_links", change the target fields
-python wxcc.py put "organization/{orgId}/agent-profile/PROFILE-ID" --body @profile.json
+## Update
+
+```
+wxcc_update(entity="agent-profile", id="PROFILE-ID", changes={"autoWrapAfterSeconds": 30})
 ```
 
-→ verify: 200, then **re-read to confirm the field actually changed** — this API family
-can silently ignore fields on a 200 (seen on users, **wxcc-users-write**). Field-level
-changes are candidates until you have run one; profiles are referenced by users, so a bad
-change hits every agent on the profile at next login. Rollback = PUT the captured original.
+Verified by a live no-op PUT (200, 2026-07-11). The tool does the read-modify-write and
+re-reads afterward.
 
-## Create / delete (candidates — deliberately unprobed)
+**Field-level changes are candidates until you run one.** And the blast radius is real:
+profiles are referenced by users, so a bad change hits **every agent on the profile at next
+login**. Check the `SILENTLY_IGNORED` map on the result — this API family is known to return
+200 while dropping fields (**wxcc-users-write**).
 
-Cisco's Postman collection lists DELETE (and bulk-export) but no create; neither has been
-run here. A profile delete while users reference it is high-blast — check user references
-(**wxcc-users**, filter mentally on `agentProfileId`) and confirm emphatically before
-attempting, or clone-edit an existing profile object via POST as an experiment on a
-sandbox first (POST shape untested).
+## Create / delete — refused by the registry
+
+`wxcc_create` and `wxcc_delete` on `agent-profile` are **not offered**: neither has been run
+here. Cisco's Postman collection lists DELETE but no create. A profile delete while users
+reference it is high-blast — check user references (**wxcc-users**, `agentProfileId`) and do
+it deliberately in the portal rather than improvising through the CLI.
 
 ## Provenance and maintenance
 
-Reads and the no-op PUT (200) run live on a us1 sandbox 2026-07-11 via `wxcc.py`.
-Deprecation of Dial Plan and the Desktop-Profile naming directive confirmed by the tenant
-owner, 2026-07-11. Field-level update, create, and delete remain candidates — re-verify
-by running one change→re-read→revert cycle on a sandbox profile.
+Reads and a no-op PUT (200) run live on a us1 sandbox 2026-07-11; re-confirmed on the gold
+tenant 2026-07-14 (20 profiles). Dial Plan deprecation and the Desktop-Profile naming
+directive confirmed by the tenant owner 2026-07-11. Field-level update, create, and delete
+remain candidates — re-verify with one change→re-read→revert cycle on a sandbox profile.

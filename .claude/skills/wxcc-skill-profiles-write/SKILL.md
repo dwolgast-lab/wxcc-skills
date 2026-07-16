@@ -1,116 +1,110 @@
 ---
 name: wxcc-skill-profiles-write
-description: Use when asked to create, update, or delete a Webex Contact Center routing skill or skill profile - "create a skill called X", "add an enum skill with values gold/silver", "create a skill profile with X at proficiency 5", "add skill X to profile Y", "delete skill/profile X". Mutating - requires cjp:config_write scope and explicit user confirmation before each write. Provides verified POST/PUT/DELETE recipes for both entities, the enum-skill value rules, and the profile sub-entity id traps.
+description: Use when asked to create, update, or delete a Webex Contact Center routing skill or skill profile - "create a skill called X", "add an enum skill with values gold/silver", "create a skill profile with X at proficiency 5", "add skill X to profile Y", "delete skill/profile X". Mutating - requires cjp:config_write and explicit user confirmation. Covers the enum-skill value rules and the sub-entity id traps.
 ---
 
 # wxcc-skill-profiles-write — create, update, delete skills and skill profiles
 
-Mutating counterpart to **wxcc-skill-profiles** (reads). Both lifecycles verified
-end-to-end against a live sandbox tenant on 2026-07-11 (create 201, update 200,
-delete 204, baseline restored), including an ENUM skill and a profile carrying it.
+Mutating counterpart to **wxcc-skill-profiles**. Call `wxcc_create` / `wxcc_update` /
+`wxcc_delete` with `entity="skill"` or `entity="skill-profile"` on the server for the tenant
+the user named. **If no tenant was named, ask — do not guess.**
 
 ## Use when / Do NOT use when
 
-**Use when:** creating/updating/deleting routing skills or skill profiles, or changing
-which skills (and values) a profile carries.
+**Use when:** creating/updating/deleting routing skills or skill profiles.
 
 **Do NOT use when:**
 - Listing/inspecting skills or profiles → **wxcc-skill-profiles**.
-- Assigning a profile to a team (`skillProfileId`) → **wxcc-teams-write**.
-- Auth errors or missing write scope → **wxcc-connect**.
+- Auth errors or 403 on write → **wxcc-connect**.
+- Assigning a profile TO a team → **wxcc-teams-write** (`skillProfileId` on the team).
+- Queue skill *requirements* → **wxcc-queues-write** (`queueSkillRequirements`).
 
-## Safety rules
+## How the write tools protect you
 
-Same non-negotiables as **wxcc-teams-write**: confirm before every write, name the
-rollback first (delete is effectively irreversible), verify after with a read, expect 403
-without `cjp:config_write`.
+Call without `confirm` → nothing is written; you get the tenant, a diff, and the rollback.
+Get an explicit yes, then re-call with `confirm=true`. Watch **`TENANT`** (first field),
+**`SILENTLY_IGNORED`**, and **`blocked`**.
 
-## Recipes — skills
+## Skills
 
-### Create a skill
-
-```bash
-python wxcc.py post "organization/{orgId}/skill" --body '{"name":"SKILL-NAME","active":true,"skillType":"BOOLEAN","serviceLevelThreshold":20}'
+```
+wxcc_create(entity="skill", fields={
+  "name": "SKILL-NAME", "active": true,
+  "skillType": "BOOLEAN", "serviceLevelThreshold": 20
+})
 ```
 
-→ verify: HTTP 201; **capture `id`**. `skillType`: `BOOLEAN`, `PROFICIENCY`, `TEXT`, or
-`ENUM` (all four observed live). ENUM additionally **requires at least one value**
-(400 "Enum skill should have atleast one value" without it):
+`skillType`: `BOOLEAN`, `PROFICIENCY`, `TEXT`, or `ENUM`.
 
-```bash
-python wxcc.py post "organization/{orgId}/skill" --body '{"name":"SKILL-NAME","active":true,"skillType":"ENUM","serviceLevelThreshold":20,"enumSkillValues":[{"name":"gold"},{"name":"silver"}]}'
+**An ENUM skill MUST ship its values at create** — otherwise
+`400 "Enum skill should have atleast one value"`:
+
+```
+wxcc_create(entity="skill", fields={
+  "name": "TIER", "active": true, "skillType": "ENUM", "serviceLevelThreshold": 20,
+  "enumSkillValues": [{"name": "gold"}, {"name": "silver"}]
+})
 ```
 
-→ each value comes back with its own `id` — capture them; profiles reference values by
-that `enumSkillValueId`, not by name.
+Each value comes back with **its own id** — those ids, not the skill id, are what profiles
+reference. Capture them.
 
-### Update a skill
+**Deleting a skill that a profile still uses returns HTTP 412** with
+`referencedEntities: ["skill-profile"]` (confirmed live). The tool pre-flights this and
+returns `conflicting_references` — remove the skill from those profiles first.
 
-```bash
-python wxcc.py get "organization/{orgId}/skill/SKILL-ID"    # capture prior state (rollback)
-python wxcc.py put "organization/{orgId}/skill/SKILL-ID" --body '{"id":"SKILL-ID","name":"SKILL-NAME","description":"...","active":true,"skillType":"BOOLEAN","serviceLevelThreshold":30}'
+## Skill profiles
+
+```
+wxcc_create(entity="skill-profile", fields={
+  "name": "PROFILE-NAME",
+  "activeSkills": [
+    {"skillId": "SKILL-ID", "booleanValue": true},
+    {"skillId": "OTHER-ID", "proficiencyValue": 5}
+  ],
+  "activeEnumSkills": [{"enumSkillValueId": "ENUM-VALUE-ID"}]
+})
 ```
 
-→ verify: HTTP 200, re-read to confirm (verified live: SLT + description change persisted).
+**The two arrays follow different rules, and getting them wrong fails in two different
+ways.** Both reproduced live:
 
-### Delete a skill
+| Mistake | Result |
+|---|---|
+| `skillId` inside an `activeEnumSkills` entry | **HTTP 500**, no message. Enum entries carry `enumSkillValueId` **only**. |
+| Re-sending a kept `activeSkills` entry without its own sub-entity `id` | **HTTP 409** `Duplicate entry ... key 'active_skill.UK...'` |
 
-```bash
-python wxcc.py delete "organization/{orgId}/skill/SKILL-ID"
+That second one is the update trap. A profile update is a **full replace**: every entry you
+intend to keep must come back carrying the `id` it already has (get it from
+`wxcc_get(entity="skill-profile", ...)`). New entries have no `id` yet — omit it for those.
+
+```
+wxcc_update(entity="skill-profile", id="PROFILE-ID", changes={
+  "activeSkills": [
+    {"id": "EXISTING-ENTRY-ID", "skillId": "SKILL-ID", "booleanValue": true},
+    {"skillId": "NEW-SKILL-ID", "proficiencyValue": 3}
+  ]
+})
 ```
 
-→ HTTP 204 when unreferenced. If any profile still carries it → HTTP **412** with
-`referencedEntities: ["skill-profile"]` (reproduced live) — remove it from those profiles
-first. **No true rollback.**
+The 500 case is worth knowing precisely: it returns no message, and a re-read showed the
+profile **unchanged** — a clean failure, not a partial write. But do not rely on that;
+re-read and check.
 
-## Recipes — skill profiles
+## Traps
 
-### Create a profile
-
-Skill values are typed per entry: `booleanValue`, `proficiencyValue` (number), or
-`textValue` — matching the skill's type. Enum skills go in a **separate array** and
-reference the value id only:
-
-```bash
-python wxcc.py post "organization/{orgId}/skill-profile" --body '{"name":"PROFILE-NAME","description":"...","activeSkills":[{"skillId":"SKILL-ID","booleanValue":true},{"skillId":"OTHER-ID","proficiencyValue":5}],"activeEnumSkills":[{"enumSkillValueId":"ENUM-VALUE-ID"}]}'
-```
-
-→ verify: HTTP 201 (both arrays verified live in one POST); **capture `id`**.
-
-### Update a profile (add/remove/re-value skills)
-
-PUT is full-replace, and the sub-entries are real sub-entities with their own ids:
-
-```bash
-python wxcc.py get "organization/{orgId}/skill-profile/PROFILE-ID"    # capture prior state
-python wxcc.py put "organization/{orgId}/skill-profile/PROFILE-ID" --body '{"id":"PROFILE-ID","name":"PROFILE-NAME","description":"...","activeSkills":[{"id":"EXISTING-ENTRY-ID","skillId":"SKILL-ID","booleanValue":true}],"activeEnumSkills":[{"enumSkillValueId":"ENUM-VALUE-ID"}]}'
-```
-
-Rules verified by differential probing (see traps): entries you are **keeping** must
-include their existing entry `id` (from the GET); entries you are **adding** have no `id`;
-entries you omit are removed. Verify with a re-read; rollback = PUT the captured original.
-
-### Delete a profile
-
-```bash
-python wxcc.py delete "organization/{orgId}/skill-profile/PROFILE-ID"
-```
-
-→ HTTP 204. Check first that no team references it (**wxcc-teams**, `skillProfileId`) —
-deleting one that is referenced is untested (candidate; expect the 412 pattern).
-
-## Traps (each reproduced live, 2026-07-11)
-
-| Wrong | Result | Right |
-|---|---|---|
-| PUT keeping an existing skill entry without its entry `id` | HTTP **409** "Duplicate entry..." (raw DB error) | Copy each kept entry's `id` from the GET |
-| `skillId` included inside an `activeEnumSkills` entry | HTTP **500** (no validation message) | Enum entries are `{"enumSkillValueId": "..."}` only |
-| ENUM skill created without values | HTTP 400 "should have atleast one value" | Include `enumSkillValues: [{"name": "..."}]` |
-| Deleting a skill a profile still uses | HTTP **412**, names `skill-profile` | Edit the profiles first |
+| Item | Detail |
+|---|---|
+| ENUM skill with no values | 400 "Enum skill should have atleast one value" |
+| `skillId` in `activeEnumSkills` | HTTP 500 (silent, no message) |
+| Kept entry missing its sub-entity `id` | HTTP 409 duplicate-entry |
+| Deleting a referenced skill | HTTP 412 naming `skill-profile` |
+| Enum values have their own ids | Profiles reference the **value** id, never the skill id |
 
 ## Provenance and maintenance
 
-All recipes run live on a us1 sandbox 2026-07-11: skill (BOOLEAN + ENUM) and profile
-lifecycles 201/200/204 each; enum-entry shape corroborated by Cisco's Postman collection
-(v3) after the 500 trap. Baselines restored (probe objects deleted, verified by list).
-Re-verify with a `zz-` named skill→profile→cleanup cycle.
+Skill and profile lifecycles run live on a us1 sandbox 2026-07-11 (create/update/delete,
+baseline restored: 11 skills, 1 profile). The 500, 409, and 412 were each reproduced, and
+the correct enum body shape was recovered from Cisco's official Postman collection (v3)
+after the 500. Re-verify with a `zz-` named skill + profile cycle, deleting the profile
+before the skill.
