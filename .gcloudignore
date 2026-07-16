@@ -1,0 +1,33 @@
+# What NOT to upload to Cloud Build. This file is a security boundary, not a
+# size optimisation: `gcloud run deploy --source .` uploads everything not
+# listed here and bakes it into the container image. Credentials must never
+# make that trip - the whole point of the deployment is that the server holds
+# no Webex credentials at all.
+
+# Credentials and tokens - NEVER upload.
+.env
+.env.*
+!.env.example
+.wxcc/
+*.token
+*tokens*.json
+
+# Local tenant config: names real customers, and means nothing to the server
+# (the caller's token decides the tenant).
+.mcp.json
+.claude/
+
+# Repo/tooling noise the runtime does not need.
+.git/
+.gitignore
+.github/
+hooks/
+scripts/
+docs/
+*.md
+!requirements.txt
+__pycache__/
+*.pyc
+.venv/
+venv/
+build/

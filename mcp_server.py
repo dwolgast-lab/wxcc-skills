@@ -210,7 +210,68 @@ def _entity(name: str) -> dict[str, Any]:
 
 
 def _client() -> wxcc.WxccClient:
+    """Where the token comes from depends on how this server is being run.
+
+    Over HTTP (Cloud Run) the CALLER authenticated to Webex themselves and their
+    token is on the request - this process stores no credentials and is
+    tenant-agnostic; the token decides the org. Over stdio (local) there is no
+    request, so fall back to this machine's token store for WXCC_PROFILE.
+    """
+    try:
+        from mcp.server.auth.middleware.auth_context import get_access_token
+        access = get_access_token()
+    except Exception:
+        access = None
+
+    if access is not None:
+        return wxcc.WxccClient(
+            _CFG.get("WXCC_API_BASE", "https://api.wxcc-us1.cisco.com"),
+            access.token,
+        )
     return wxcc.client_from_store(wxcc.load_config())
+
+
+# Cache: org identity is immutable for the life of a token, and every tool call
+# stamps it, so this must not cost an API round-trip each time.
+_org_cache: dict[str, dict] = {}
+
+
+def _org_info(client: wxcc.WxccClient) -> dict:
+    """The tenant's OWN name, straight from `GET organization/{orgId}`.
+
+    Authoritative on purpose: a configured label can drift or be copied to the
+    wrong profile, and on Cloud Run there is no config at all. Asking the tenant
+    who it is cannot lie. `subscriptionType` distinguishes a paying customer's
+    org from a trial/sandbox without anyone having to declare it.
+    """
+    if client.org_id in _org_cache:
+        return _org_cache[client.org_id]
+    try:
+        status, body = client.json("GET", f"organization/{client.org_id}")
+    except Exception:
+        status, body = 0, None
+    if status != 200 or not isinstance(body, dict):
+        return {"name": "(org name unavailable)", "org_id": client.org_id,
+                "production": None}
+    info = {
+        "name": body.get("name"),
+        "org_id": client.org_id,
+        "subscription": body.get("subscriptionType"),
+        "environment": body.get("environment"),
+        # A paying subscription is a real customer tenant. Trials are sandboxes.
+        "production": body.get("subscriptionType") == "SUBSCRIPTION",
+    }
+    _org_cache[client.org_id] = info
+    return info
+
+
+def _tenant(client: wxcc.WxccClient) -> str:
+    """One line naming exactly which tenant a result came from / would change."""
+    i = _org_info(client)
+    if i.get("production") is None:
+        return f"{i['name']} (org {i['org_id']})"
+    tag = "PRODUCTION" if i["production"] else "trial/sandbox"
+    return f"{i['name']} [{tag}] (org {i['org_id']})"
 
 
 def _path(entity: str, item_id: str | None = None, write: bool = False) -> str:
@@ -250,34 +311,59 @@ def wxcc_whoami() -> dict:
 
     Run this first when anything looks like an auth problem.
     """
-    tok = wxcc.load_tokens()
-    if not tok:
-        return {"authenticated": False, "profile": _PROFILE, "tenant": _LABEL,
-                "fix": f"WXCC_PROFILE={_PROFILE} python wxcc.py auth login"}
-    client = _client()
+    tok = wxcc.load_tokens()      # None when running over HTTP - no local store
+    remote = tok is None
+
+    if remote:
+        try:
+            client = _client()    # token rides on the request
+        except Exception as exc:
+            return {"authenticated": False, "transport": "http",
+                    "error": str(exc),
+                    "fix": "run /mcp (or `claude mcp login <server>`) to sign in "
+                           "to Webex as an admin of the tenant you want"}
+    else:
+        client = _client()
+
     status, _ = client.json("GET", _path("site") + "?pageSize=1")
 
-    # Two profiles resolving to the same org means one authenticated to the wrong
-    # tenant (the browser reused an existing Webex session). Surface it here, not
-    # after someone has already written to the wrong place.
+    out: dict[str, Any] = {
+        "authenticated": True,
+        "org_id": client.org_id,
+        "api_base": client.api_base,
+        "live_read_check": f"HTTP {status}",
+        "entities": sorted(ENTITIES),
+    }
+
+    if remote:
+        # Nothing is stored here: the caller's own Webex token decides the org,
+        # so there are no profiles to compare and no scopes to read back.
+        out |= {
+            "transport": "http (per-caller Webex OAuth; server stores no tokens)",
+            "tenant": f"whichever org your token belongs to: {client.org_id}",
+            "note": "Confirm this org id is the tenant you meant before writing.",
+        }
+        return out
+
+    # Local: two profiles resolving to the same org means one authenticated to
+    # the wrong tenant (the browser reused an existing Webex session). Surface it
+    # here, not after someone has already written to the wrong place.
     others = {p: o for p, o in wxcc.all_profile_orgs().items()
               if o == client.org_id and p not in (_PROFILE, "(default)" if _PROFILE == "default" else "")}
-    return {
-        "authenticated": True,
+    granted = tok.get("granted_scopes") or ""
+    out |= {
+        "transport": "stdio (local token store)",
         "tenant": _LABEL,
         "aliases": _ALIASES or None,
         "profile": _PROFILE,
-        "org_id": client.org_id,
+        "granted_scopes": granted or "(not reported by Webex)",
+        "write_capable": "cjp:config_write" in granted,
         "WRONG_TENANT_WARNING": (
             f"Profile '{_PROFILE}' shares org {client.org_id} with {list(others)}. "
             "One of them authenticated to the wrong tenant. Do NOT write until fixed."
         ) if others else None,
-        "api_base": client.api_base,
-        "granted_scopes": tok.get("granted_scopes", "(not reported by Webex)"),
-        "write_capable": "cjp:config_write" in (tok.get("granted_scopes") or ""),
-        "live_read_check": f"HTTP {status}",
-        "entities": sorted(ENTITIES),
     }
+    return out
 
 
 @mcp.tool()
@@ -304,22 +390,24 @@ def wxcc_list(entity: str, filter: str = "", search: str = "",
 
     if all_pages:
         records, pages = client.list_all(path)
-        return {"entity": entity, "totalRecords": len(records),
-                "pagesFetched": pages, "data": records,
-                "note": spec.get("note")}
+        return {"tenant": _tenant(client), "entity": entity,
+                "totalRecords": len(records), "pagesFetched": pages,
+                "data": records, "note": spec.get("note")}
     status, body = client.json("GET", path)
     if status >= 400:
         return {"error": f"HTTP {status}", "body": body}
-    return {"entity": entity, "meta": body.get("meta"), "data": body.get("data"),
-            "note": spec.get("note")}
+    return {"tenant": _tenant(client), "entity": entity, "meta": body.get("meta"),
+            "data": body.get("data"), "note": spec.get("note")}
 
 
 @mcp.tool()
 def wxcc_get(entity: str, id: str) -> dict:
     """Read one WxCC config object by id. Returns the full object."""
     spec = _entity(entity)
-    obj = _read(_client(), entity, id)
-    return {"entity": entity, "data": obj, "note": spec.get("note")}
+    client = _client()
+    obj = _read(client, entity, id)
+    return {"tenant": _tenant(client), "entity": entity, "data": obj,
+            "note": spec.get("note")}
 
 
 # --------------------------------------------------------------------------- #
@@ -345,7 +433,8 @@ def wxcc_create(entity: str, fields: dict, confirm: bool = False) -> dict:
                 "required": spec.get("create"), "note": spec.get("note")}
 
     if not confirm:
-        return {"dry_run": True, "action": f"POST {_path(entity, write=True)}",
+        return {"TENANT": _tenant(_client()), "dry_run": True,
+                "action": f"POST {_path(entity, write=True)}",
                 "would_create": fields, "note": spec.get("note"),
                 "rollback": f"wxcc_delete(entity='{entity}', id=<new id>, confirm=True)",
                 "next": "re-call with confirm=True once the user approves"}
@@ -356,7 +445,7 @@ def wxcc_create(entity: str, fields: dict, confirm: bool = False) -> dict:
         return {"created": False, "http": status, "error": body}
     new_id = (body or {}).get("id")
     verified = _read(client, entity, new_id) if new_id else None
-    return {"created": True, "http": status, "id": new_id,
+    return {"TENANT": _tenant(client), "created": True, "http": status, "id": new_id,
             "verified_by_reread": verified,
             "rollback": f"wxcc_delete(entity='{entity}', id='{new_id}', confirm=True)"}
 
@@ -387,8 +476,8 @@ def wxcc_update(entity: str, id: str, changes: dict, confirm: bool = False) -> d
         return {"no_op": True, "reason": "every requested value already matches"}
 
     if not confirm:
-        return {"dry_run": True, "action": f"PUT {_path(entity, id)}",
-                "diff": diff, "note": spec.get("note"),
+        return {"TENANT": _tenant(client), "dry_run": True,
+                "action": f"PUT {_path(entity, id)}", "diff": diff, "note": spec.get("note"),
                 "rollback": "wxcc_update with the original values shown under "
                             "'from' above",
                 "next": "re-call with confirm=True once the user approves"}
@@ -402,6 +491,7 @@ def wxcc_update(entity: str, id: str, changes: dict, confirm: bool = False) -> d
     ignored = {k: {"requested": v, "actual": after.get(k)}
                for k, v in changes.items() if after.get(k) != v}
     return {
+        "TENANT": _tenant(client),
         "updated": True, "http": status,
         "confirmed_changed": {k: after.get(k) for k in changes if k not in ignored},
         "SILENTLY_IGNORED": ignored or None,
@@ -434,6 +524,7 @@ def wxcc_delete(entity: str, id: str, confirm: bool = False) -> dict:
     refs = _find_references(client, entity, id)
     if refs:
         return {
+            "TENANT": _tenant(client),
             "blocked": True,
             "reason": f"{len(refs)} object(s) still reference this {entity}. "
                       "The API would reject the delete with HTTP 412.",
@@ -448,8 +539,8 @@ def wxcc_delete(entity: str, id: str, confirm: bool = False) -> dict:
         }
 
     if not confirm:
-        return {"dry_run": True, "action": f"DELETE {_path(entity, id)}",
-                "would_destroy": current, "note": spec.get("note"),
+        return {"TENANT": _tenant(client), "dry_run": True,
+                "action": f"DELETE {_path(entity, id)}", "would_destroy": current, "note": spec.get("note"),
                 "no_blocking_references": True,
                 "rollback": "NONE - a delete cannot be undone via the API. "
                             "Recreating produces a new id; references to the old "
@@ -469,7 +560,7 @@ def wxcc_delete(entity: str, id: str, confirm: bool = False) -> dict:
                          "from each user's teamIds.") if status == 412 else None}
 
     gone_status, _ = client.json("GET", _path(entity, id))
-    return {"deleted": True, "http": status,
+    return {"TENANT": _tenant(client), "deleted": True, "http": status,
             "verified_gone": gone_status == 404,
             "reread_status": gone_status}
 

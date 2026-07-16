@@ -1,3 +1,6 @@
 # Only the MCP server needs these. `wxcc.py` itself stays stdlib-only, so the
 # CLI and every skill keep working with a bare Python install.
 mcp>=1.28
+
+# HTTP transport only (mcp_http.py / Cloud Run). Not needed for local stdio.
+uvicorn>=0.30
