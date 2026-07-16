@@ -20,7 +20,7 @@ you the results.
 | "Move agent Jane to the Sales team" | Updates the user's `teamIds` (site/type rules enforced) |
 | "Add a wrap-up code called Escalated" | Creates the auxiliary code |
 | "Raise queue X's service level threshold to 30 seconds" | Dry run → confirm → write → re-read diff |
-| "How many calls did we take this week?" | Queries the GraphQL Search API over interaction data |
+| "How many calls did we take this week, by queue?" | GraphQL aggregation — grouped counts without transferring the tasks |
 | "Delete team X" | Refuses if anything still references it, and lists what |
 
 ---
@@ -346,8 +346,8 @@ Entities: `user`, `team`, `site`, `contact-service-queue`, `entry-point`, `dial-
   read-only.
 - **Phone numbers cannot be invented** — dial-number records map numbers already in the
   Webex Calling inventory. A fictional number returns 404, not 400.
-- **Refused because unproven, not because impossible:** site writes, and the
-  `agent-profile` bulk/purge endpoints. The tools refuse rather than guess.
+- **Refused because unproven, not because impossible:** the `agent-profile` bulk/purge
+  endpoints. The tools refuse rather than guess.
 - **Webhook delivery payloads are unverified** — needs a real receiving endpoint.
 - **Flows are out of scope by design.** Cisco ships its own `flow-store` MCP server; run it
   alongside this one. This repo owns the config flows bind to — entry points, queues, teams,
@@ -357,8 +357,7 @@ Entities: `user`, `team`, `site`, `contact-service-queue`, `entry-point`, `dial-
 
 ## Roadmap
 
-Bulk-export · GraphQL aggregations
-(wallboard formulas) · site writes · webhook delivery payload (needs a receiver).
+Bulk-export · webhook delivery payload (needs a receiver).
 
 ---
 *Draft 3 — 2026-07-16.*

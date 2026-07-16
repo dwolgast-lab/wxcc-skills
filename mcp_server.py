@@ -66,8 +66,12 @@ ENTITIES: dict[str, dict[str, Any]] = {
     },
     "site": {
         "list": "v2/site", "item": "site/{id}",
-        "writes": [],
-        "note": "Read-only here: site writes have never been probed.",
+        "create": ["name", "active", "multimediaProfileId"],
+        "writes": ["create", "update", "delete"],
+        "note": "All three create fields are REQUIRED (a 400 names them). Copy "
+                "multimediaProfileId from an existing site. Deleting a site that "
+                "teams or users still reference is pre-flighted and blocked - repoint "
+                "them first (team.siteId via wxcc_update; user.siteId is a candidate).",
     },
     "contact-service-queue": {
         "list": "v2/contact-service-queue", "item": "contact-service-queue/{id}",
@@ -811,6 +815,17 @@ def wxcc_search_tasks(query: str) -> dict:
     Example:
       { task(from: 1720000000000, to: 1720600000000)
           { tasks { id status channelType } pageInfo { hasNextPage } } }
+
+    Aggregations (verified live): pass `aggregations: [{field, type, name}]` on
+    the root; types are count|sum|average|min|max|cardinality (NOT avg). The
+    scalar fields you select in `tasks{}` become the GROUP BY keys, and each
+    group's metrics arrive in its `aggregation {name value}` list:
+      { task(from: F, to: T,
+             aggregations: [{ field: "id", type: count, name: "calls" }])
+          { tasks { lastQueue { name } aggregation { name value } } } }
+    The queue field on Task is `lastQueue` - `queue` does not exist. A `filter:`
+    argument composes with aggregations. Introspection is disabled; unknown
+    fields fail with FieldUndefined naming the field.
 
     This is reporting data, not tenant config.
     """

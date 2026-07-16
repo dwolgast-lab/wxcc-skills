@@ -29,7 +29,7 @@ returns the result.
 ```
 wxcc_search_tasks(query="""
 { task(from: 1720000000000, to: 1720600000000, first: 50) {
-    tasks { id status channelType queue { name } createdTime }
+    tasks { id status channelType lastQueue { name } createdTime }
     pageInfo { hasNextPage }
 } }
 """)
@@ -37,6 +37,12 @@ wxcc_search_tasks(query="""
 
 Three roots: **`task`** (contacts/interactions), **`agentSession`** (login sessions and
 state), **`taskDetails`** (per-task detail).
+
+**The queue field is `lastQueue`, not `queue`** — an earlier version of this skill showed
+`queue { name }`, which does not exist (`FieldUndefined`). Fields verified on Task:
+`id`, `status`, `channelType`, `lastQueue { name }`, `owner { name }`, `origin`,
+`destination`, `totalDuration`, `createdTime`, `endedTime`. Introspection is disabled, so
+an unknown field is found only by the error naming it.
 
 ## The rule that will bite you first
 
@@ -52,11 +58,38 @@ no calls. This is the single most likely way to give a confidently wrong answer 
 Compute the window from the user's intent ("yesterday", "this week") and **state the window
 you used** in your answer so they can catch a mistake.
 
-## Aggregations
+## Aggregations — verified live 2026-07-16
 
-Cisco's Postman collection shows aggregation syntax (counts, group-bys) for wallboard-style
-numbers. **Untested here — candidate.** If you use it, say the shape is unverified and
-sanity-check the result against a plain `task` count over the same window.
+Wallboard numbers without transferring the tasks. Pass `aggregations` on the root; **the
+scalar fields you select in `tasks{}` become the GROUP BY keys**, and each group's metrics
+arrive in its `aggregation { name value }` list.
+
+"How many calls per queue this week":
+
+```
+wxcc_search_tasks(query="""
+{ task(from: F, to: T,
+       aggregations: [{ field: "id", type: count, name: "calls" }]) {
+    tasks { lastQueue { name } aggregation { name value } }
+} }
+""")
+```
+
+Multiple metrics in one call (`avg`/`max` handle time by channel):
+
+```
+aggregations: [
+  { field: "totalDuration", type: average, name: "avgDur" },
+  { field: "totalDuration", type: max,     name: "maxDur" },
+  { field: "id",            type: count,   name: "n" }
+]
+```
+
+**Types: `count | sum | average | min | max | cardinality`** — `avg` is rejected. A
+`filter:` argument (e.g. `filter: { channelType: { equals: telephony } }`) composes with
+aggregations. Verified numerically: the by-queue counts summed exactly to the plain-count
+baseline (65 = 33 + 30 + 1 + 1). A group with `lastQueue: null` is real — tasks that never
+touched a queue (e.g. outdial legs) — report it as "no queue," don't drop it.
 
 ## The REST alternative
 
@@ -79,11 +112,13 @@ control). Reach for the CLI only if you need it — and note the CLI uses whatev
 | Seconds instead of milliseconds | Silent empty result — no error |
 | Missing `from`/`to` | 400 "Missing field argument" |
 | Host-root API | `POST search?orgId={orgId}`, not under `organization/{orgId}` — the tool handles this |
-| Aggregations | Collection-sourced, unrun — candidate |
 
 ## Provenance and maintenance
 
 GraphQL `task` and `agentSession` roots run live on a us1 sandbox 2026-07-11 (65 real tasks
 returned). The millis requirement, the 400 on missing args, the REST 184-day/12-month
-limits, and the absent item path were each reproduced. Aggregation syntax is from Cisco's
-Postman collection (v3, Aug 2023) and remains a candidate.
+limits, and the absent item path were each reproduced. **Aggregations verified 2026-07-16**:
+enum probed value-by-value (introspection is disabled), group-by semantics confirmed, and
+the by-queue counts cross-checked against the plain-count baseline. The `queue`→`lastQueue`
+field error in this skill's own earlier example was found the same day — an example written
+from memory, not from a probe log. Examples here are runnable as shown.
