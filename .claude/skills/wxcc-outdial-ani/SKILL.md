@@ -1,6 +1,6 @@
 ---
 name: wxcc-outdial-ani
-description: Use when asked about Webex Contact Center outdial ANIs (the caller-ID numbers agents present on outbound calls) - "list our outdial ANIs", "what number shows when agents dial out", "create an outdial ANI", "add a number to ANI list X", "delete outdial ANI X". Covers reads and verified create/delete; update is a labeled candidate.
+description: Use when asked about Webex Contact Center outdial ANIs (the caller-ID numbers agents present on outbound calls) - "list our outdial ANIs", "what number shows when agents dial out", "create an outdial ANI", "add a number to ANI list X", "delete outdial ANI X". Covers reads and verified create/update/delete - including adding or removing a number, which is a full replace of the entries array.
 ---
 
 # wxcc-outdial-ani — outbound caller-ID number lists (read + write)
@@ -46,23 +46,57 @@ wxcc_delete(entity="outdial-ani", id="ANI-ID")     # preview first
 Dry-run first, show the user, then `confirm=true`. Watch **`TENANT`**,
 **`SILENTLY_IGNORED`**, **`blocked`**.
 
-**Update is refused by the registry** — `wxcc_update` on `outdial-ani` is unproven. PUT with
-the full object is the shape every other entity in this API uses, but it has never been run
-here. That means **"add a number to an existing ANI list" has no verified path yet**: say so
-rather than improvising. Creating a new list works.
+### Adding or removing a number (update)
+
+Renaming is easy — pass only what changes and the entries carry through untouched:
+
+```
+wxcc_update(entity="outdial-ani", id="ANI-ID", changes={"name": "NEW-NAME"})
+```
+
+**Changing the numbers is a FULL REPLACE of `outdialANIEntries`, and it is easy to destroy
+data.** Two rules, both reproduced live 2026-07-16:
+
+1. **An entry you omit is DELETED.** To add one number, send the existing entries *plus* the
+   new one — not just the new one.
+2. **Every kept entry must carry its existing sub-entity `id`**, or you get
+   **409 `Duplicate entry`** (the same trap as `skill-profile.activeSkills`). New entries
+   omit `id`. The 409 is a clean failure — the list is left unchanged.
+
+```
+# 1. read the current entries
+cur = wxcc_get(entity="outdial-ani", id="ANI-ID")
+
+# 2. keep them WITH their ids, append the new one WITHOUT an id
+wxcc_update(entity="outdial-ani", id="ANI-ID", changes={"outdialANIEntries": [
+  {"id": "<existing entry id>", "name": "Main", "number": "+15551234567",
+   "defaultANIEntry": true},
+  {"name": "Second", "number": "+15557654321", "defaultANIEntry": false}
+]})
+```
+
+To **remove** a number, send the array without it.
+
+The result reports `needs_your_eyes` rather than `confirmed_changed` for the array: the
+server adds ids/timestamps and **reorders the entries**, so it cannot be auto-verified.
+**Read the `actual` list back and confirm it is what the user asked for.**
 
 ## Traps
 
 | Item | Detail |
 |---|---|
 | **Number ownership is not validated at create** | The API accepted a fictional number (observed live). Presenting an ANI the tenant does not own is a **compliance problem, not an API error** — it will fail or misbehave on real calls. Confirm the number is entitled before creating. |
-| Endpoints absent from Cisco's Postman collection | The collection has GET only; create/delete were found by probing and verified live (201/204). Absence from samples ≠ absence from API. |
+| Endpoints absent from Cisco's Postman collection | The collection has GET only; create/update/delete were found by probing and verified live (201/200/204). Absence from samples ≠ absence from API. |
+| Omitting an entry on update | **Deletes it.** Full replace, not merge. |
+| Kept entry without its `id` | **409 duplicate-entry** (clean failure, list unchanged) |
+| The API reorders entries | Sent `[A, B]`, got `[B, A]`. Never depend on order. |
 | Deleting a referenced ANI | Untested (**candidate/danger**). Check no Desktop Profile points at it (`outdialANIId`) first. |
 | Entries are embedded | Not a sub-resource — the list is the unit |
 
 ## Provenance and maintenance
 
-Reads, create (201), and delete (204) run live on a us1 sandbox 2026-07-11; baseline
-restored. Update remains untested and is therefore refused by the tools rather than guessed
-at. Re-verify with a `zz-` named create→delete cycle. **Follow-up:** probe the PUT so
-adding a number to an existing list gets a verified path.
+Reads, create (201), and delete (204) run live on a us1 sandbox 2026-07-11. **Update probed
+and verified 2026-07-16** (200): rename, add-an-entry, and remove-an-entry all confirmed by
+re-read; the 409-without-id and the entry reordering were each reproduced; probe object
+deleted and the baseline of 2 lists restored. Re-verify with a `zz-` named
+create→update→delete cycle.

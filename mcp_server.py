@@ -54,7 +54,10 @@ ENTITIES: dict[str, dict[str, Any]] = {
         "writes": ["update"],
         "note": "Users are created/deleted in Control Hub, not here. Identity "
                 "fields (firstName/lastName/email) are immutable via this API. "
-                "`userLevelSummariesInclusion` is SILENTLY IGNORED on a 200.",
+                "`userLevelSummariesInclusion` is SILENTLY IGNORED on a 200 (confirmed "
+                "again 2026-07-16 with a valid value) - likely entitlement-gated. Its "
+                "accepted values are EXCLUDED | NOT_APPLICABLE | INCLUDED; anything else "
+                "is a clean 400 naming the enum.",
     },
     "team": {
         "list": "v2/team", "item": "team/{id}",
@@ -126,8 +129,14 @@ ENTITIES: dict[str, dict[str, Any]] = {
     "outdial-ani": {
         "list": "v2/outdial-ani", "item": "outdial-ani/{id}",
         "create": ["name", "outdialANIEntries"],
-        "writes": ["create", "delete"],
-        "note": "Entries are embedded, not a sub-resource. UPDATE is untested.",
+        "writes": ["create", "update", "delete"],
+        "note": "Entries are embedded in outdialANIEntries, not a sub-resource, so "
+                "changing the numbers means replacing the whole array. It is a FULL "
+                "REPLACE: an entry you omit is DELETED. Every entry you keep must carry "
+                "its existing sub-entity `id` or you get 409 duplicate-entry (same trap "
+                "as skill-profile.activeSkills); new entries omit `id`. The API reorders "
+                "the array. Number ownership is NOT validated - a fictional ANI is "
+                "accepted and fails on real calls.",
     },
     "agent-profile": {
         "list": "v2/agent-profile", "item": "agent-profile/{id}",
@@ -493,15 +502,36 @@ def wxcc_update(entity: str, id: str, changes: dict, confirm: bool = False) -> d
                 "note": spec.get("note")}
 
     after = _read(client, entity, id)
-    ignored = {k: {"requested": v, "actual": after.get(k)}
-               for k, v in changes.items() if after.get(k) != v}
+
+    # Only SCALARS can be compared reliably. The server enriches sub-objects with
+    # ids/timestamps and reorders arrays (seen on teamIds and outdialANIEntries),
+    # so equality on a complex value reports a correct write as "ignored". A safety
+    # check that cries wolf gets ignored, so say "unverified" instead of guessing.
+    ignored, applied, unverified = {}, {}, {}
+    for k, v in changes.items():
+        got = after.get(k)
+        if isinstance(v, (list, dict)):
+            unverified[k] = got
+        elif got != v:
+            ignored[k] = {"requested": v, "actual": got}
+        else:
+            applied[k] = got
+
     return {
         "TENANT": _tenant(client),
         "updated": True, "http": status,
-        "confirmed_changed": {k: after.get(k) for k in changes if k not in ignored},
+        "confirmed_changed": applied or None,
         "SILENTLY_IGNORED": ignored or None,
         "warning": ("The API returned 200 but did NOT apply the fields under "
-                    "SILENTLY_IGNORED. Tell the user.") if ignored else None,
+                    "SILENTLY_IGNORED. Tell the user; do not report success.")
+                   if ignored else None,
+        "needs_your_eyes": {
+            "fields": sorted(unverified),
+            "actual": unverified,
+            "why": "Complex values cannot be auto-verified: the server adds ids and "
+                   "timestamps and may reorder arrays. Read 'actual' and confirm it "
+                   "is what the user asked for.",
+        } if unverified else None,
         "rollback": {k: v["from"] for k, v in diff.items()},
     }
 
