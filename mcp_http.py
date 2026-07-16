@@ -25,7 +25,8 @@ import os
 import sys
 import time
 
-from urllib.parse import urlparse
+import json as _json
+from urllib.parse import parse_qs, urlparse
 
 from mcp.server.auth.provider import AccessToken, TokenVerifier
 from mcp.server.auth.settings import AuthSettings
@@ -110,17 +111,83 @@ mcp.settings.auth = AuthSettings(
 # by default with an empty allowlist - which is why a fresh deploy answers
 # "Invalid Host header"). Name the real host rather than switching the check off:
 # it stops a malicious page from driving this server through someone's browser.
-_host = urlparse(RESOURCE_URL).hostname
+_parsed = urlparse(RESOURCE_URL)
+_host = _parsed.hostname
+_allowed = {_host, f"{_host}:443"}
+if _parsed.port:                     # a non-default port must be named explicitly,
+    _allowed.add(f"{_host}:{_parsed.port}")   # or local runs answer 421
 mcp.settings.transport_security = TransportSecuritySettings(
-    allowed_hosts=[h for h in {_host, f"{_host}:443", "localhost", "localhost:8080",
-                               "127.0.0.1", "127.0.0.1:8080"} if h],
-    allowed_origins=[RESOURCE_URL, "http://localhost:8080"],
+    allowed_hosts=sorted(h for h in _allowed if h),
+    allowed_origins=[RESOURCE_URL],
 )
 mcp.settings.stateless_http = True   # Cloud Run may route a follow-up anywhere
 mcp.settings.host = "0.0.0.0"
 mcp.settings.port = int(os.environ.get("PORT", 8080))
 
-app = mcp.streamable_http_app()
+class ExpectedOrgGuard:
+    """Refuse a token whose org is not the one this client says it expects.
+
+    Locally, `wxcc.py` catches a wrong-tenant login by comparing profiles. This
+    server is stateless and sees one token at a time, so it cannot. That gap is
+    not theoretical: a browser silently reusing a Webex session has produced a
+    wrong-tenant login three times, once leaving a server NAMED sandbox holding a
+    PRODUCTION token.
+
+    So the client declares the org it believes it is talking to, and a mismatch is
+    rejected here - before any tool runs, on every request, whether or not anyone
+    remembered to check. Declare it either way:
+
+        url:    https://<service>/mcp?org=<org id>          (always works)
+        header: X-WXCC-Expected-Org: <org id>               (needs headers+oauth
+                                                             to coexist in .mcp.json)
+
+    Declaring nothing keeps the old behaviour: allowed, unguarded. The org is read
+    from the token itself, so a caller cannot assert an org they lack a token for.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+
+        headers = {k.decode("latin-1").lower(): v.decode("latin-1")
+                   for k, v in scope.get("headers") or []}
+        expected = headers.get("x-wxcc-expected-org")
+        if not expected:
+            qs = parse_qs(scope.get("query_string", b"").decode("latin-1"))
+            expected = (qs.get("org") or [None])[0]
+        if not expected:
+            return await self.app(scope, receive, send)
+
+        auth = headers.get("authorization", "")
+        token = auth.split(None, 1)[1] if " " in auth else ""
+        actual = wxcc.extract_org_id(token) if token else None
+
+        if actual and actual != expected:
+            print(f"REJECT wrong tenant: token org {actual} != expected {expected}",
+                  file=sys.stderr)
+            body = _json.dumps({
+                "error": "wrong_tenant",
+                "error_description":
+                    f"This server expects org {expected} but your token is for "
+                    f"{actual}. You are signed in to the wrong tenant - almost "
+                    f"always a browser reusing an existing Webex session. Run "
+                    f"`claude mcp logout <server>` then `claude mcp login <server> "
+                    f"--no-browser` and paste the URL into a private window.",
+                "expected_org": expected, "token_org": actual,
+            }).encode()
+            await send({"type": "http.response.start", "status": 403,
+                        "headers": [(b"content-type", b"application/json"),
+                                    (b"content-length", str(len(body)).encode())]})
+            await send({"type": "http.response.body", "body": body})
+            return
+
+        return await self.app(scope, receive, send)
+
+
+app = ExpectedOrgGuard(mcp.streamable_http_app())
 
 if __name__ == "__main__":
     import uvicorn

@@ -74,8 +74,15 @@ mints a token for the FIRST tenant — and it looks like it worked.** `wxcc.py` 
 always this mistake. `auth login` now **refuses** it (exit 3), `auth status` warns loudly,
 and `wxcc_whoami` returns `WRONG_TENANT_WARNING`.
 
-**The cloud server cannot do this** — it is stateless and sees one token at a time. There,
-the only check is reading the org name back from `wxcc_whoami`. Do it.
+**The cloud server cannot compare profiles** — it is stateless and sees one token at a time.
+Instead, give each cloud entry an **expected org** and it refuses a mismatch outright:
+
+```json
+"url": "https://<service>/mcp?org=<the org id this server should reach>"
+```
+
+A token from any other org gets **403 `wrong_tenant`**, naming both orgs, on every request.
+Get the org id from `wxcc_whoami`. Declaring nothing leaves the server unguarded.
 
 ## Local vs cloud servers
 
@@ -83,7 +90,7 @@ the only check is reading the org name back from `wxcc_whoami`. Do it.
 |---|---|---|
 | Config | `.env.<profile>` + local token store | none — the caller's token decides the org |
 | Auth | `python wxcc.py auth login` | `claude mcp login <server> --no-browser` |
-| Wrong-tenant detection | Yes, cross-profile | **No** — stateless |
+| Wrong-tenant guard | Cross-profile org collision → refuse/warn | `?org=` declared → **403 on every request** |
 | Needs repo + Python | Yes | No |
 
 Both expose the same tools. The cloud server holds **zero** Webex credentials.
@@ -99,6 +106,8 @@ Both expose the same tools. The cloud server holds **zero** Webex credentials.
 | `.mcp.json` server "awaiting approval" | Run `claude` interactively in the repo and approve. Renaming a server invalidates its prior approval. |
 | Server missing entirely (Windows) | Drive-letter case: `--scope local` keys to the cwd's case, so `C:\` and `c:\` are two records. Use `--scope project` / `.mcp.json`. |
 | `Invalid Host header` from the cloud server | Its host is not in the SDK's DNS-rebinding allowlist — a deploy config issue, not auth. |
+| **403 `wrong_tenant`** from a cloud server | Working as designed: your token is for a different org than the entry declares. `claude mcp logout <server>`, then `claude mcp login <server> --no-browser` as the right tenant's admin. |
+| A cloud server suddenly wants re-authentication | Its URL changed. Tokens are keyed `<name>\|<config hash>`, so editing the URL orphans the token. Expected — just sign in again. |
 
 ## Provenance and maintenance
 

@@ -207,16 +207,26 @@ which collides with Cloud Run IAM. An anonymous request gets 401 from the token 
 `WXCC_ALLOWED_ORGS` restricts it to your tenants. A caller's token only ever reaches its own
 org — the server grants no access they don't already have.
 
-Client side, one entry per tenant, all pointing at the same URL (tokens are keyed per
-**server name**, not per URL — verified):
+Client side, one entry per tenant, all pointing at the same service. **Declare the org each
+entry expects** with `?org=<org id>` — the server rejects a token from any other org with a
+`403 wrong_tenant`, which is what makes a wrong-tenant login *impossible* here rather than
+merely detectable:
 
 ```json
 { "mcpServers": {
     "wxcc-cloud-acme": {
-      "type": "http", "url": "https://<service>/mcp",
+      "type": "http", "url": "https://<service>/mcp?org=<acme's org id>",
       "oauth": { "clientId": "<integration client id>", "callbackPort": 8484,
                  "scopes": "cjp:config_read cjp:config cjp:config_write" } } } }
 ```
+
+Get the org id from `wxcc_whoami` (or `python wxcc.py auth status`). The header form
+`X-WXCC-Expected-Org` works too, but whether `headers` and `oauth` coexist in one entry is
+unverified — the URL form always works.
+
+Tokens are stored per **`<server name>|<config hash>`**, so several entries can share one
+service URL and hold different tokens. **Changing an entry's URL changes the hash and
+orphans its token** — you will be asked to sign in again.
 
 Store the secret and sign in:
 
@@ -229,8 +239,14 @@ claude mcp login wxcc-cloud-acme --no-browser    # paste the URL into a private 
 **Use `--no-browser`.** It prints the authorize URL instead of opening one, which is the only
 reliable way to keep the browser from handing back the wrong identity.
 
-**Trade-off:** the cloud server is stateless, so it **cannot** do the cross-profile
-wrong-tenant detection the local server does. Check `wxcc_whoami` after every login.
+**The guard covers what the cloud otherwise cannot.** A stateless server sees one token at a
+time, so it can never do the cross-profile comparison `wxcc.py` does locally. Declaring
+`?org=` replaces that with something stronger: the check runs on **every request**, not just
+when someone remembers to look, and it cannot be satisfied by a token from another org
+because the org is read from the token itself.
+
+Declare nothing and you keep the old behaviour — allowed, unguarded. On a real customer
+tenant, declare it.
 
 ## How it works
 
@@ -287,7 +303,7 @@ Entities: `user`, `team`, `site`, `contact-service-queue`, `entry-point`, `dial-
 ## Roadmap
 
 Bulk-export · GraphQL aggregations
-(wallboard formulas) · site writes · an expected-org guard for cloud servers.
+(wallboard formulas) · site writes · webhook delivery payload (needs a receiver).
 
 ---
 *Draft 3 — 2026-07-16.*
