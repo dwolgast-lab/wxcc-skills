@@ -248,6 +248,60 @@ because the org is read from the token itself.
 Declare nothing and you keep the old behaviour — allowed, unguarded. On a real customer
 tenant, declare it.
 
+### Onboarding a teammate (they do NOT follow "Setup from scratch")
+
+That section is for running it **locally**. A teammate using the cloud needs **no repo, no
+Python, no `.env`, no token store** — two commands:
+
+```powershell
+MCP_CLIENT_SECRET=<integration secret> claude mcp add-json wxcc-acme `
+  '{"type":"http","url":"https://<service>/mcp?org=<acme org id>","oauth":{"clientId":"<client id>","callbackPort":8484,"scopes":"cjp:config_read cjp:config cjp:config_write"}}' `
+  --client-secret --scope user
+
+claude mcp login wxcc-acme --no-browser     # paste the URL into a private window
+```
+
+`--scope user` keeps it out of any repo directory, so it works from anywhere.
+
+Then: **"run wxcc_whoami"**. It must name the tenant they expect.
+
+Three things that decide whether this works:
+
+- **They must be a CC administrator of that tenant.** OAuth is per-user: they consent as
+  themselves and get *their own* access. This does not lend them yours — that is the point.
+  Their WxCC role, not this server, decides what they can do.
+- **They need the Integration's client secret.** Webex offers no public-client option, so it
+  lands in each teammate's keychain. Tolerable for a couple of people; at around five, put an
+  OAuth shim in front (the server holds the secret and presents a public PKCE client).
+- **Their org must be in `WXCC_ALLOWED_ORGS`** or every tool call 401s. Only you can change
+  that — see below.
+
+### Adding a customer tenant to a cloud service
+
+Steps 2 and 3 need `gcloud`, so **this is not self-service for a teammate**:
+
+1. **Get the org id.** Chicken-and-egg: the allowlist needs it before anything works. Read it
+   from Control Hub, from `wxcc_whoami`/`auth status` if anyone has local access — or let them
+   try and read it out of the rejection: the server logs
+   `reject: org <id> not in WXCC_ALLOWED_ORGS` to Cloud Run's stderr.
+2. **Allowlist it** (must include the existing ids — this replaces the value):
+
+   ```bash
+   gcloud run services update wxcc-mcp --region us-central1 \
+     --update-env-vars "^##^WXCC_ALLOWED_ORGS=<existing ids>,<new id>"
+   ```
+
+3. **Check the region.** `WXCC_API_BASE` is per-**service**, not per-caller, so a customer
+   outside your service's region needs **its own Cloud Run service**. This is the sharpest
+   limit in the current design.
+4. They add their entry with `?org=<id>` and sign in.
+5. Add a row to your alias table so Claude knows what people call it.
+
+> The allowlist is **abuse prevention for your instance, not a data boundary** — a caller's
+> token only ever reaches its own org, so a stranger with a valid token gains nothing they
+> could not already do by calling Cisco directly. If teammate onboarding gets tiresome,
+> dropping it and relying on the `?org=` guard is a defensible trade.
+
 ## How it works
 
 ```text
