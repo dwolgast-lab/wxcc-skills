@@ -5,6 +5,32 @@ Notable changes to the wxcc-skills library. Format loosely follows
 
 ## Unreleased
 
+- **The helper graduated into an MCP server.** `mcp_server.py` exposes 8 tools over a
+  13-entity registry. Writes are dry-run by default; `confirm=true` executes, then
+  **re-reads and diffs**, reporting `SILENTLY_IGNORED` when the API returns 200 but drops
+  a field. Deletes pre-flight references and block with a list of conflicts instead of
+  surfacing the API's 412 after the fact. Required fields are checked before the call.
+- **Every result names its tenant** — from `GET organization/{orgId}` (the tenant's own
+  record), not a configured label, tagged `[PRODUCTION]` or `[trial/sandbox]` off
+  `subscriptionType`. On writes it is the first field read.
+- **Multi-tenant:** `WXCC_PROFILE` selects `.env.<profile>` + its own token store. One MCP
+  server per tenant, so the tenant is part of the tool name. No "switch tenant" command,
+  deliberately. `auth login` now refuses a login whose org collides with another profile,
+  and sends `prompt=login` — though `--no-browser` is the control that actually works.
+- **Cloud Run deployment** (`mcp_http.py`, `Dockerfile`): the same tools, with the caller's
+  own Webex OAuth token arriving on the request. The server stores no credentials — no
+  token store, no refresh race, no standing admin credential. Verified end-to-end.
+- **All 19 skills now call the MCP tools** instead of shelling out to the CLI (110 CLI
+  references → 9, both deliberate fallbacks). Facts the registry enforces were removed from
+  the prose so they have one home.
+- `wxcc.py`: `WxccError` (raises instead of exiting) and `WxccClient` with an injected
+  token, so one code path serves the local token store and a request-header bearer.
+- Docs rewritten (Draft 3): the setup path now actually works from a fresh clone — it was
+  missing `pip install -r requirements.txt` entirely, plus the `.mcp.json`, approval, and
+  restart steps.
+- New confirmed API facts: the create-collection path drops `v2` (`POST v2/<entity>` → 405);
+  team deletes are reference-blocked by users (412, `referencedEntities` nested under
+  `error`); multi-team membership works; the API reorders `teamIds`.
 - Added five skills, all probed live: `wxcc-entry-points-write` (EP lifecycle verified
   201/200/204; dial-number writes documented incl. the numbers-must-exist-in-Calling
   404), `wxcc-skill-profiles-write` (skill + profile lifecycles verified, ENUM value

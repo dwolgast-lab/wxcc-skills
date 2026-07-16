@@ -1,57 +1,83 @@
 # wxcc-skills
 
-A library of [Claude Code skills](https://docs.claude.com/en/docs/claude-code/skills) for administering a **Webex Contact Center (WxCC)** tenant through natural-language prompts.
+MCP tools and [Claude Code skills](https://docs.claude.com/en/docs/claude-code/skills) for
+administering a **Webex Contact Center (WxCC)** tenant through natural-language prompts.
 
-Each skill is a runbook that teaches Claude how to perform a specific class of WxCC administrative task — reading and mutating tenant configuration (users/agents, teams, queues, sites, entry points, skills, and so on) against the Webex Contact Center REST APIs.
+Ask for what you want — "create a team called Billing on the Denver site", "which entry
+point does +1 719 555 0100 route to?", "raise queue X's service level to 30 seconds" — and
+Claude calls verified WxCC Admin APIs on your behalf.
 
 ## Status
 
-19 skills, every recipe verified against a live tenant: connection setup
-(`wxcc-connect`), reads and writes for users, teams, queues, sites, entry points +
-dial numbers, routing skills + skill profiles, aux codes, address books, outdial ANI,
-Desktop Profiles, and desktop layouts — plus interaction-data reporting
-(`wxcc-tasks-search`) and event subscriptions (`wxcc-webhooks`). See the
-[User Guide](docs/user-guide.md) for the full catalog and what each one can write.
+An **MCP server** (8 tools over 13 config entities) plus **19 skills** that route to it.
+Every recipe was run against a live tenant before it was written down; anything unverified
+is labeled a *candidate*. Runs locally over stdio, or on **Cloud Run** where the server
+holds no credentials at all and each caller authenticates as themselves.
 
-**Architecture:** skills call a thin shared Python helper (`wxcc.py`, stdlib only) that owns
-OAuth, token storage/refresh, org-id resolution, and authenticated requests. Auth is an
-**OAuth Integration** (user-context, authorization-code flow). Longer term this helper is
-intended to graduate into an MCP server.
+**New here? Start with the [User Guide](docs/user-guide.md)** — setup from scratch, the
+safety model, multi-tenant, and the honest list of limits.
 
-Verified end-to-end against a live us1 tenant (2026-07-10): consent flow, token storage,
-orgId auto-derivation, and an authenticated List Users read. Responses paginate via
-`meta.page`/`pageSize` (default 100) with `meta.links.next`; records are in `data[]`.
+## Why it's built this way
 
-**Convention:** pass API paths to `wxcc.py get` **without a leading slash**
-(`organization/{orgId}/v2/user`) — Git Bash rewrites leading-slash arguments into
-filesystem paths.
+**Writes are mechanically gated, not politely requested.** A write call without `confirm`
+returns a dry run — the tenant, a field-level diff, and the rollback — and writes nothing.
+A confirmed write **re-reads and diffs**, because this API can return `200` while silently
+ignoring a field. Deletes pre-flight references and refuse with a list of what to fix.
 
-**New here? Start with the [User Guide](docs/user-guide.md)** — what it does, setup, the
-safety model, and the full skill catalog.
+**Every result names the tenant it came from** — pulled from the tenant's own record, not a
+configured label, and tagged `[PRODUCTION]` or `[trial/sandbox]`.
+
+**One MCP server per tenant, so the tenant is part of the tool name.** There is deliberately
+no "switch tenant" command: a mutable current-tenant pointer is how a delete meant for
+sandbox lands on production.
+
+**Facts live in code, judgement lives in skills.** Which paths drop `v2`, which fields a
+create requires, which deletes get reference-blocked — those are enforced by the entity
+registry rather than hoped for. Skills carry when-to-use and the traps you still control.
 
 ## Quick start
 
-Load the **wxcc-connect** skill (or read `.claude/skills/wxcc-connect/SKILL.md`) and follow
-it: register an OAuth Integration at developer.webex.com, copy `.env.example` → `.env`, run
-`python wxcc.py auth login`, then verify with `python wxcc.py auth status`.
+```bash
+git clone https://github.com/dwolgast-lab/wxcc-skills && cd wxcc-skills
+pip install -r requirements.txt
+cp .env.example .env          # add your Integration's client id/secret + region host
+python wxcc.py auth login     # open the printed URL in a PRIVATE window
+python wxcc.py auth status    # confirm the org id is the tenant you meant
+cp .mcp.json.example .mcp.json
+claude                        # approve the project MCP server, then /exit and restart
+```
+
+Then ask Claude to **"run wxcc_whoami"**. Full walkthrough, including the browser-session
+trap that will otherwise authenticate you to the wrong tenant:
+**[User Guide](docs/user-guide.md)**.
 
 ## Layout
 
 ```text
-wxcc.py                                # shared helper CLI (auth + GET/POST/PUT/PATCH/DELETE)
-.env.example                           # config template (copy to gitignored .env)
-.claude/skills/<skill-name>/SKILL.md   # individual skills (Claude loads these)
-CHANGELOG.md                           # dated log of notable changes
-docs/                                  # user guide (md = source of truth, pdf = export)
-scripts/build_user_guide_pdf.py        # regenerates the guide PDF (markdown + Chrome)
-hooks/pre-commit                       # auto-rebuilds the PDF when the guide is committed
+wxcc.py                                # OAuth + tokens + requests (stdlib only)
+mcp_server.py                          # MCP tools + the entity registry
+mcp_http.py, Dockerfile                # Cloud Run deployment (per-caller OAuth)
+.env.example, .mcp.json.example        # copy these; the real ones are gitignored
+.claude/skills/<name>/SKILL.md         # 19 skills
+docs/                                  # user guide (md = source, pdf = export)
+CHANGELOG.md
 ```
 
-The guide PDF regenerates automatically on commit. One-time setup per clone:
-`git config core.hooksPath hooks` (needs `pip install markdown` and Chrome or Edge).
+`wxcc.py` stays dependency-free on purpose — the CLI works with a bare Python install, and
+only the MCP server needs `requirements.txt`.
+
+The guide PDF regenerates on commit: `git config core.hooksPath hooks`
+(needs `pip install markdown` and Chrome or Edge).
+
+## Scope
+
+**Flows are out of scope, by design.** Cisco ships its own `flow-store` MCP server for flow
+authoring — run it alongside this one. This repo owns the config that flows bind to: entry
+points, queues, teams, skill profiles.
 
 ## Safety
 
-- API tokens and credentials must **never** be committed. See `.gitignore`.
-- Administrative operations are mutating and often hard to reverse. Skills that
-  change tenant state must confirm before writing and state how to roll back.
+- Tokens and credentials are **never** committed. `.env*`, `.wxcc/`, and `.mcp.json` are
+  gitignored — the last because server names tend to be real customer names.
+- Administrative operations are mutating and often hard to reverse. The tools enforce
+  dry-run → confirm → verify; skills state the rollback before anything runs.
