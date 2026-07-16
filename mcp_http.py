@@ -25,8 +25,11 @@ import os
 import sys
 import time
 
+from urllib.parse import urlparse
+
 from mcp.server.auth.provider import AccessToken, TokenVerifier
 from mcp.server.auth.settings import AuthSettings
+from mcp.server.transport_security import TransportSecuritySettings
 
 import wxcc
 from mcp_server import mcp
@@ -101,6 +104,17 @@ mcp.settings.auth = AuthSettings(
     issuer_url=WEBEX_ISSUER,
     resource_server_url=RESOURCE_URL,
     required_scopes=None,
+)
+
+# The SDK rejects any Host it was not told to expect (DNS-rebinding defence, on
+# by default with an empty allowlist - which is why a fresh deploy answers
+# "Invalid Host header"). Name the real host rather than switching the check off:
+# it stops a malicious page from driving this server through someone's browser.
+_host = urlparse(RESOURCE_URL).hostname
+mcp.settings.transport_security = TransportSecuritySettings(
+    allowed_hosts=[h for h in {_host, f"{_host}:443", "localhost", "localhost:8080",
+                               "127.0.0.1", "127.0.0.1:8080"} if h],
+    allowed_origins=[RESOURCE_URL, "http://localhost:8080"],
 )
 mcp.settings.stateless_http = True   # Cloud Run may route a follow-up anywhere
 mcp.settings.host = "0.0.0.0"

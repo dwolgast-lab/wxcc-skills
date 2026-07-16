@@ -337,11 +337,16 @@ def wxcc_whoami() -> dict:
 
     if remote:
         # Nothing is stored here: the caller's own Webex token decides the org,
-        # so there are no profiles to compare and no scopes to read back.
+        # so there are no profiles to compare and no configured label to read.
+        # The tenant's own record is the only source of truth available - and the
+        # better one, since it cannot drift from what the token actually reaches.
+        info = _org_info(client)
         out |= {
             "transport": "http (per-caller Webex OAuth; server stores no tokens)",
-            "tenant": f"whichever org your token belongs to: {client.org_id}",
-            "note": "Confirm this org id is the tenant you meant before writing.",
+            "tenant": _tenant(client),
+            "production": info.get("production"),
+            "note": "This is the tenant YOUR token reaches. Confirm it is the one "
+                    "you meant before writing.",
         }
         return out
 
