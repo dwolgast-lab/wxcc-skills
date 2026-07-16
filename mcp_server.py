@@ -146,11 +146,20 @@ ENTITIES: dict[str, dict[str, Any]] = {
     },
     "agent-profile": {
         "list": "v2/agent-profile", "item": "agent-profile/{id}",
-        "writes": ["update"],
+        "create": ["name"],
+        "writes": ["create", "update", "delete"],
+        "clone_safe": False,
         "note": "This is a DESKTOP PROFILE. The `agent-profile` path is backwards "
                 "compatibility only - always say 'Desktop Profile' to the user. "
-                "dialPlanEnabled/dialPlans still appear but Dial Plan is DEPRECATED "
-                "in WxCC - ignore them. Create/delete unprobed.",
+                "CREATE BY CLONING an existing profile, but STRIP EVERY NESTED `id` "
+                "first - `viewableStatistics` is a dict carrying its own id, and "
+                "reusing it returns 409 'Internal error. Please contact Cisco Support "
+                "Team', which names nothing. wxcc_create strips them for you. "
+                "The access* fields are ALL/SPECIFIC switches paired with id lists - "
+                "reading the list alone misleads when the switch says ALL. "
+                "dialPlanEnabled/dialPlans still appear but Dial Plan is DEPRECATED in "
+                "WxCC - ignore them. A profile is referenced by users, so a bad change "
+                "hits every agent on it at next login.",
     },
     "desktop-layout": {
         "list": "v2/desktop-layout", "item": "desktop-layout/{id}",
@@ -165,53 +174,53 @@ ENTITIES: dict[str, dict[str, Any]] = {
 }
 
 
-# Who points AT whom. Used to pre-flight a delete so the user gets a list of
-# conflicts to resolve, instead of a bare 412 from the API after the fact.
-# The API's 412 remains the backstop - this map is a courtesy, not the authority.
-#   412-CONFIRMED live: team<-user.teamIds, skill<-skill-profile.activeSkills
-#   The rest are inferred from observed record shapes and are NOT yet 412-proven.
-REFERENCED_BY: dict[str, list[tuple[str, str]]] = {
-    "team":           [("user", "teamIds")],                          # confirmed
-    "skill":          [("skill-profile", "activeSkills[].skillId")],  # confirmed
-    "site":           [("team", "siteId"), ("user", "siteId")],
-    "entry-point":    [("dial-number", "entryPointId")],
-    "skill-profile":  [("team", "skillProfileId")],
-    "agent-profile":  [("user", "agentProfileId")],
-    "desktop-layout": [("team", "desktopLayoutId")],
-    "outdial-ani":    [("agent-profile", "outdialANIId")],
-}
-
-
-def _label(rec: dict) -> str:
-    name = rec.get("name")
-    if name:
-        return name
-    who = f"{rec.get('firstName', '')} {rec.get('lastName', '')}".strip()
-    return who or rec.get("email") or rec.get("id", "?")
-
-
-def _field_hits(rec: dict, spec: str, target: str) -> bool:
-    """Does `rec` reference `target` via `spec`? Handles scalars, id-lists, and
-    list-of-dicts (`activeSkills[].skillId`)."""
-    if "[]." in spec:
-        listkey, _, subkey = spec.partition("[].")
-        return any(isinstance(i, dict) and i.get(subkey) == target
-                   for i in (rec.get(listkey) or []))
-    val = rec.get(spec)
-    return target in val if isinstance(val, list) else val == target
-
-
 def _find_references(client: wxcc.WxccClient, entity: str, target: str) -> list[dict]:
+    """Who points at this object, straight from the API.
+
+    `GET <entity>/{id}/incoming-references` is authoritative and exists on every
+    config entity (verified on 10). It replaced a client-side scan over a
+    hand-written map of relationships - which was slow, mostly inferred, and
+    provably incomplete: it knew a team was referenced by users but not by a
+    queue's callDistributionGroups.
+
+    Read it carefully. The response covers ONE entity type at a time:
+      meta.referencedEntities -> every type that points here
+      meta.currentEntity      -> the only type in this response's data[]
+    So `?type=<each>` must be walked, or you report the first type's blockers and
+    silently miss the rest. `meta.totalPages` counts pages WITHIN the current
+    type, while a bare `?page=N` walks ACROSS types - do not conflate them.
+    """
+    root = f"organization/{{orgId}}/{entity}/{target}/incoming-references"
+    try:
+        status, body = client.json("GET", root)
+    except Exception as exc:
+        return [{"scan_failed": f"{exc}"}]        # never let a failure read as "clean"
+    if status == 404:
+        return []
+    if status >= 400 or not isinstance(body, dict):
+        return [{"scan_failed": f"HTTP {status}: {str(body)[:120]}"}]
+
+    types = (body.get("meta") or {}).get("referencedEntities") or []
     hits: list[dict] = []
-    for ref_entity, spec in REFERENCED_BY.get(entity, []):
-        try:
-            records, _ = client.list_all(_path(ref_entity) + "?pageSize=100")
-        except Exception as exc:            # a failed scan must not read as "clean"
-            hits.append({"entity": ref_entity, "scan_failed": str(exc)})
-            continue
-        hits += [{"entity": ref_entity, "id": r.get("id"), "name": _label(r),
-                  "via_field": spec}
-                 for r in records if _field_hits(r, spec, target)]
+    for ref_entity in types:
+        page = 0
+        while True:
+            status, doc = client.json("GET", f"{root}?type={ref_entity}&page={page}"
+                                            "&pageSize=100")
+            if status >= 400 or not isinstance(doc, dict):
+                hits.append({"entity": ref_entity,
+                             "scan_failed": f"HTTP {status}"})
+                break
+            meta = doc.get("meta") or {}
+            # Guard: if the API ignores ?type= it echoes a different currentEntity.
+            # Trust what it says it returned, not what we asked for.
+            actual = meta.get("currentEntity") or ref_entity
+            hits += [{"entity": actual, "id": r.get("id"),
+                      "name": r.get("name") or r.get("id")}
+                     for r in (doc.get("data") or [])]
+            page += 1
+            if page >= (meta.get("totalPages") or 1) or page > 50:
+                break
     return hits
 
 
@@ -308,6 +317,22 @@ def _path(entity: str, item_id: str | None = None, write: bool = False) -> str:
 def _strip(obj: dict) -> dict:
     """Drop server-generated link blocks that a PUT must not echo back."""
     return {k: v for k, v in obj.items() if k not in ("links", "_links")}
+
+
+def _strip_nested_ids(obj: Any) -> Any:
+    """Remove every `id` below the top level.
+
+    A sub-entity id belongs to the object it was read from. Re-sending one while
+    CREATING a different object collides, and this API reports that badly: 409
+    "Internal error. Please contact Cisco Support Team" (agent-profile, via the
+    viewableStatistics dict), 409 duplicate-entry (outdial-ani entries), or a
+    bare 500 (skill-profile activeEnumSkills). Same cause, three error shapes.
+    """
+    if isinstance(obj, dict):
+        return {k: _strip_nested_ids(v) for k, v in obj.items() if k != "id"}
+    if isinstance(obj, list):
+        return [_strip_nested_ids(i) for i in obj]
+    return obj
 
 
 def _read(client: wxcc.WxccClient, entity: str, item_id: str) -> dict:
@@ -452,6 +477,14 @@ def wxcc_create(entity: str, fields: dict, confirm: bool = False) -> dict:
                          "naming these)", "missing": missing,
                 "required": spec.get("create"), "note": spec.get("note")}
 
+    # Entities whose sub-objects carry ids cannot be created from a clone that
+    # still holds them. Strip rather than let the caller hit an error that names
+    # nothing (agent-profile answers 409 "Internal error. Contact Cisco Support").
+    if spec.get("clone_safe") is False:
+        cleaned = _strip_nested_ids(fields)
+        if cleaned != fields:
+            fields = cleaned
+
     if not confirm:
         return {"TENANT": _tenant(_client()), "dry_run": True,
                 "action": f"POST {_path(entity, write=True)}",
@@ -571,9 +604,10 @@ def wxcc_delete(entity: str, id: str, confirm: bool = False) -> dict:
                       "The API would reject the delete with HTTP 412.",
             "conflicting_references": refs,
             "resolve_first": [
-                f"{r['entity']} '{r['name']}' ({r.get('id')}) via `{r['via_field']}`"
+                f"{r['entity']} '{r['name']}' ({r.get('id')})"
                 for r in refs if "scan_failed" not in r
             ],
+            "scan_failures": [r for r in refs if "scan_failed" in r] or None,
             "how": "Repoint or clear each reference above, then retry the delete. "
                    "For a team, that means removing it from each user's teamIds.",
             "deleted": False,

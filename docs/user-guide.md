@@ -130,8 +130,9 @@ promise Claude makes:
 - **Every confirmed write re-reads and diffs.** This API can return **200 while silently
   ignoring a field** — a lesson learned live — so the tool reports `SILENTLY_IGNORED` when
   the API lied. "The API said OK" is never the proof.
-- **Deletes pre-flight references** and refuse with a list of what to fix, rather than
-  letting you discover the 412 afterward.
+- **Deletes pre-flight references** — via the API's own `incoming-references`, so the list
+  of blockers is authoritative rather than guessed — and refuse with what to fix, rather
+  than letting you discover the 412 afterward.
 - **Required fields are checked before the call**, so you get a useful error instead of the
   API's 400.
 
@@ -345,8 +346,8 @@ Entities: `user`, `team`, `site`, `contact-service-queue`, `entry-point`, `dial-
   read-only.
 - **Phone numbers cannot be invented** — dial-number records map numbers already in the
   Webex Calling inventory. A fictional number returns 404, not 400.
-- **Refused because unproven, not because impossible:** site writes and `agent-profile`
-  create/delete. The tools refuse rather than guess.
+- **Refused because unproven, not because impossible:** site writes, and the
+  `agent-profile` bulk/purge endpoints. The tools refuse rather than guess.
 - **Webhook delivery payloads are unverified** — needs a real receiving endpoint.
 - **Flows are out of scope by design.** Cisco ships its own `flow-store` MCP server; run it
   alongside this one. This repo owns the config flows bind to — entry points, queues, teams,

@@ -1,9 +1,9 @@
 ---
 name: wxcc-desktop-profiles
-description: Use when asked about Webex Contact Center Desktop Profiles (historically "Agent Profiles" - the API path is still agent-profile) - "list desktop profiles", "what does desktop profile X allow", "which wrap-up/idle codes or queues does profile X expose", "change profile X's auto-wrap or outdial settings", "what ANI does profile X use". Covers reads and the verified update shape; create/delete are labeled candidates.
+description: Use when asked about Webex Contact Center Desktop Profiles (historically "Agent Profiles" - the API path is still agent-profile) - "list desktop profiles", "what does desktop profile X allow", "which wrap-up/idle codes or queues does profile X expose", "create/copy a desktop profile", "change profile X's auto-wrap or outdial settings", "what ANI does profile X use", "delete profile X". Full CRUD, all verified live.
 ---
 
-# wxcc-desktop-profiles — agent desktop behavior profiles (read + update)
+# wxcc-desktop-profiles — agent desktop behavior profiles (full CRUD)
 
 Call the `wxcc_*` MCP tools with `entity="agent-profile"` on the server for the tenant the
 user named. **If no tenant was named, ask — do not guess.**
@@ -62,16 +62,49 @@ profiles are referenced by users, so a bad change hits **every agent on the prof
 login**. Check the `SILENTLY_IGNORED` map on the result — this API family is known to return
 200 while dropping fields (**wxcc-users-write**).
 
-## Create / delete — refused by the registry
+## Create — clone an existing profile
 
-`wxcc_create` and `wxcc_delete` on `agent-profile` are **not offered**: neither has been run
-here. Cisco's Postman collection lists DELETE but no create. A profile delete while users
-reference it is high-blast — check user references (**wxcc-users**, `agentProfileId`) and do
-it deliberately in the portal rather than improvising through the CLI.
+There is no sensible minimal body: a profile is ~46 fields. **Read one, rename it, create.**
+
+```
+tpl = wxcc_get(entity="agent-profile", id="SOURCE-ID")
+wxcc_create(entity="agent-profile", fields={**tpl["data"], "name": "NEW-NAME"})
+```
+
+The tool drops `id`/`links`/timestamps **and every nested `id`** for you. That last part
+matters: `viewableStatistics` is a dict carrying its own `id`, and re-sending a borrowed one
+returns **409 "Internal error. Please contact Cisco Support Team"** — which names nothing and
+sends you hunting. Reproduced live 2026-07-16, then isolated to that field.
+
+Rollback: `wxcc_delete` the returned id.
+
+## Delete
+
+```
+wxcc_delete(entity="agent-profile", id="PROFILE-ID")               # preview
+wxcc_delete(entity="agent-profile", id="PROFILE-ID", confirm=true)
+```
+
+The tool pre-flights `incoming-references`, so a profile with users on it comes back
+**blocked**, listing every one by name. **No rollback** — recreate yields a new id and every
+user pointing at the old one breaks.
+
+## Traps
+
+| Item | Detail |
+|---|---|
+| 409 "Internal error. Contact Cisco Support" on create | You reused a nested `id` (usually `viewableStatistics`). Not a Cisco outage — a borrowed sub-entity id. |
+| `access*` switches | ALL/SPECIFIC paired with an id list. Reading the list alone misleads when the switch says ALL. |
+| `dialPlanEnabled`/`dialPlans` | Still in responses; **Dial Plan is deprecated in WxCC**. Ignore. |
+| Blast radius | Users reference profiles — a bad change hits every agent on it at next login. |
+| Bulk / purge endpoints | `POST agent-profile/bulk` and `POST agent-profile/purge-inactive-entities` exist. **Neither is probed or exposed** — purge especially is mass-destructive. Do not improvise. |
 
 ## Provenance and maintenance
 
-Reads and a no-op PUT (200) run live on a us1 sandbox 2026-07-11; re-confirmed on the gold
-tenant 2026-07-14 (20 profiles). Dial Plan deprecation and the Desktop-Profile naming
-directive confirmed by the tenant owner 2026-07-11. Field-level update, create, and delete
-remain candidates — re-verify with one change→re-read→revert cycle on a sandbox profile.
+Reads and a no-op PUT (200) run live 2026-07-11; re-confirmed on the gold tenant 2026-07-14
+(20 profiles). **Create (201) and delete (204) probed and verified 2026-07-16**, including
+the 409-on-nested-id, which was reproduced twice and isolated to `viewableStatistics`;
+reference-blocking confirmed against a profile with 12 users; baseline of 5 restored. Dial
+Plan deprecation and the Desktop-Profile naming directive confirmed by the tenant owner
+2026-07-11. Field-level update remains a candidate — verify with a change→re-read→revert
+cycle on a sandbox profile.
