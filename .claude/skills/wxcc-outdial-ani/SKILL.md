@@ -1,6 +1,6 @@
 ---
 name: wxcc-outdial-ani
-description: Use when asked about Webex Contact Center outdial ANIs (the caller-ID numbers agents present on outbound calls) - "list our outdial ANIs", "what number shows when agents dial out", "create an outdial ANI", "add a number to ANI list X", "delete outdial ANI X". Covers reads and verified create/update/delete - including adding or removing a number, which is a full replace of the entries array.
+description: Use when asked about Webex Contact Center outdial ANIs (the caller-ID numbers agents present on outbound calls) - "list our outdial ANIs", "what number shows when agents dial out", "create an outdial ANI", "add a number to ANI list X", "delete outdial ANI X". Full CRUD on both the ANI list and its individual numbers - add or remove one number at a time via the entry sub-resource.
 ---
 
 # wxcc-outdial-ani — outbound caller-ID number lists (read + write)
@@ -9,9 +9,9 @@ Call the `wxcc_*` MCP tools with `entity="outdial-ani"` on the server for the te
 user named. **If no tenant was named, ask — do not guess.**
 
 An outdial ANI is a **named list** of E.164 numbers an agent can present as caller ID on
-outbound calls. Desktop Profiles reference one via `outdialANIId`. Entries are **embedded**
-in the ANI object (`outdialANIEntries`), not a sub-resource — so adding a number is an
-update to the whole list.
+outbound calls. Desktop Profiles reference one via `outdialANIId`. The numbers are a
+**sub-resource** (`outdial-ani/{id}/entry`) with their own tools — though they also appear
+embedded in the parent's `outdialANIEntries` array when you read it.
 
 ## Use when / Do NOT use when
 
@@ -46,57 +46,58 @@ wxcc_delete(entity="outdial-ani", id="ANI-ID")     # preview first
 Dry-run first, show the user, then `confirm=true`. Watch **`TENANT`**,
 **`SILENTLY_IGNORED`**, **`blocked`**.
 
-### Adding or removing a number (update)
+### Adding, changing, or removing ONE number — use the entry tools
 
-Renaming is easy — pass only what changes and the entries carry through untouched:
+Numbers live in a **sub-resource** (`outdial-ani/{id}/entry`). Touch one at a time:
+
+```
+wxcc_list_entries(entity="outdial-ani", parent_id="ANI-ID")
+wxcc_add_entry(entity="outdial-ani", parent_id="ANI-ID",
+               fields={"name": "Second", "number": "+15557654321"})
+wxcc_update_entry(entity="outdial-ani", parent_id="ANI-ID", entry_id="ENTRY-ID",
+                  changes={"number": "+15557654322"})
+wxcc_remove_entry(entity="outdial-ani", parent_id="ANI-ID", entry_id="ENTRY-ID")
+```
+
+All verified live 2026-07-16 (201/200/204), each confirmed by re-reading the parent.
+
+**Renaming the list itself** is a normal update — entries carry through untouched:
 
 ```
 wxcc_update(entity="outdial-ani", id="ANI-ID", changes={"name": "NEW-NAME"})
 ```
 
-**Changing the numbers is a FULL REPLACE of `outdialANIEntries`, and it is easy to destroy
-data.** Two rules, both reproduced live 2026-07-16:
+### Do NOT edit `outdialANIEntries` on the parent
 
-1. **An entry you omit is DELETED.** To add one number, send the existing entries *plus* the
-   new one — not just the new one.
-2. **Every kept entry must carry its existing sub-entity `id`**, or you get
-   **409 `Duplicate entry`** (the same trap as `skill-profile.activeSkills`). New entries
-   omit `id`. The 409 is a clean failure — the list is left unchanged.
+It works, but it is a **full replace** and it is easy to destroy data: an entry you omit is
+**deleted**, and every kept entry must resend its own `id` or you get **409 duplicate-entry**.
+The entry tools have neither hazard. Use them.
 
-```
-# 1. read the current entries
-cur = wxcc_get(entity="outdial-ani", id="ANI-ID")
-
-# 2. keep them WITH their ids, append the new one WITHOUT an id
-wxcc_update(entity="outdial-ani", id="ANI-ID", changes={"outdialANIEntries": [
-  {"id": "<existing entry id>", "name": "Main", "number": "+15551234567",
-   "defaultANIEntry": true},
-  {"name": "Second", "number": "+15557654321", "defaultANIEntry": false}
-]})
-```
-
-To **remove** a number, send the array without it.
-
-The result reports `needs_your_eyes` rather than `confirmed_changed` for the array: the
-server adds ids/timestamps and **reorders the entries**, so it cannot be auto-verified.
-**Read the `actual` list back and confirm it is what the user asked for.**
+(If you ever do replace the array, the result reports `needs_your_eyes` rather than
+`confirmed_changed` — the server adds ids/timestamps and reorders the entries, so it cannot
+be auto-verified. Read the `actual` list back.)
 
 ## Traps
 
 | Item | Detail |
 |---|---|
 | **Number ownership is not validated at create** | The API accepted a fictional number (observed live). Presenting an ANI the tenant does not own is a **compliance problem, not an API error** — it will fail or misbehave on real calls. Confirm the number is entitled before creating. |
-| Endpoints absent from Cisco's Postman collection | The collection has GET only; create/update/delete were found by probing and verified live (201/200/204). Absence from samples ≠ absence from API. |
-| Omitting an entry on update | **Deletes it.** Full replace, not merge. |
-| Kept entry without its `id` | **409 duplicate-entry** (clean failure, list unchanged) |
+| Endpoints absent from Cisco's Postman collection | The collection has GET only; create/update/delete and the whole entry sub-resource were found by probing and verified live. Absence from samples ≠ absence from API. |
+| `GET .../entry` | **405** — the child collection has no list endpoint. Read entries from the parent (`wxcc_list_entries` does this). |
+| Replacing `outdialANIEntries` wholesale | Omitting an entry **deletes** it; a kept entry without its `id` gives **409**. Use the entry tools instead. |
 | The API reorders entries | Sent `[A, B]`, got `[B, A]`. Never depend on order. |
 | Deleting a referenced ANI | Untested (**candidate/danger**). Check no Desktop Profile points at it (`outdialANIId`) first. |
-| Entries are embedded | Not a sub-resource — the list is the unit |
+| Entries appear in two places | They are a real sub-resource AND echoed in the parent's array. Read from the parent; write via the entry tools. |
 
 ## Provenance and maintenance
 
-Reads, create (201), and delete (204) run live on a us1 sandbox 2026-07-11. **Update probed
-and verified 2026-07-16** (200): rename, add-an-entry, and remove-an-entry all confirmed by
-re-read; the 409-without-id and the entry reordering were each reproduced; probe object
-deleted and the baseline of 2 lists restored. Re-verify with a `zz-` named
-create→update→delete cycle.
+Reads, create (201), and delete (204) run live on a us1 sandbox 2026-07-11. Parent update
+(200) and the entry sub-resource (POST 201 / PUT 200 / DELETE 204, `GET .../entry` → 405)
+probed and verified 2026-07-16, each confirmed by re-reading the parent; the
+full-replace hazards on the parent array (omission deletes, kept entry without its `id` →
+409) were each reproduced. Probe objects deleted, baseline of 2 lists restored.
+
+The entry sub-resource was **missed on the first pass** — the create body shows entries
+embedded, so they were assumed embedded-only. The tenant owner pointed at
+`POST .../outdial-ani/{id}/entry` and it was there. Absence from Cisco's collection is not
+absence from the API; the same two-level shape holds for **wxcc-address-books**.

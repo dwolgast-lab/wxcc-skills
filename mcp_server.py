@@ -124,18 +124,24 @@ ENTITIES: dict[str, dict[str, Any]] = {
         "list": "v2/address-book", "item": "address-book/{id}",
         "create": ["name", "parentType"],
         "writes": ["create", "update", "delete"],
-        "note": "Entries are a sub-resource: address-book/{id}/entry.",
+        "child": "entry",
+        "child_create": ["name", "number"],
+        "note": "Entries are a sub-resource. Use the wxcc_*_entry tools to touch one "
+                "entry at a time rather than replacing the whole array - safer, and it "
+                "avoids the kept-entry-needs-its-id 409. Entries can also be embedded at "
+                "book creation via addressBookEntries.",
     },
     "outdial-ani": {
         "list": "v2/outdial-ani", "item": "outdial-ani/{id}",
         "create": ["name", "outdialANIEntries"],
         "writes": ["create", "update", "delete"],
-        "note": "Entries are embedded in outdialANIEntries, not a sub-resource, so "
-                "changing the numbers means replacing the whole array. It is a FULL "
-                "REPLACE: an entry you omit is DELETED. Every entry you keep must carry "
-                "its existing sub-entity `id` or you get 409 duplicate-entry (same trap "
-                "as skill-profile.activeSkills); new entries omit `id`. The API reorders "
-                "the array. Number ownership is NOT validated - a fictional ANI is "
+        "child": "entry",
+        "child_create": ["name", "number"],
+        "note": "To add/change/remove ONE number use the wxcc_*_entry tools "
+                "(outdial-ani/{id}/entry) - targeted and safe. Updating the parent's "
+                "outdialANIEntries array instead is a FULL REPLACE: an omitted entry is "
+                "DELETED, and every kept entry must resend its own `id` or you get 409 "
+                "duplicate-entry. Number ownership is NOT validated - a fictional ANI is "
                 "accepted and fails on real calls.",
     },
     "agent-profile": {
@@ -598,6 +604,160 @@ def wxcc_delete(entity: str, id: str, confirm: bool = False) -> dict:
     return {"TENANT": _tenant(client), "deleted": True, "http": status,
             "verified_gone": gone_status == 404,
             "reread_status": gone_status}
+
+
+# --------------------------------------------------------------------------- #
+# Sub-resource entries (address-book, outdial-ani)
+#
+# Both entities keep their items in a child collection AND echo them back in an
+# array on the parent. Editing that array is a full replace - omit an entry and
+# it is deleted, keep one without its id and you get 409. These endpoints touch
+# one entry at a time, so they avoid both. Prefer them.
+# --------------------------------------------------------------------------- #
+def _child_spec(entity: str) -> dict[str, Any]:
+    spec = _entity(entity)
+    if not spec.get("child"):
+        raise ValueError(
+            f"{entity} has no entry sub-resource. Entities with one: "
+            + ", ".join(sorted(e for e, s in ENTITIES.items() if s.get("child")))
+        )
+    return spec
+
+
+def _child_path(entity: str, parent_id: str, child_id: str | None = None) -> str:
+    spec = _child_spec(entity)
+    tail = f"{spec['item'].replace('{id}', parent_id)}/{spec['child']}"
+    if child_id:
+        tail += f"/{child_id}"
+    return f"organization/{{orgId}}/{tail}"
+
+
+def _parent_entries(client: wxcc.WxccClient, entity: str, parent_id: str) -> list:
+    """Entries are readable only from the parent - GET on the child collection 405s."""
+    parent = _read(client, entity, parent_id)
+    for key in ("addressBookEntries", "outdialANIEntries", "entries"):
+        if isinstance(parent.get(key), list):
+            return parent[key]
+    return []
+
+
+@mcp.tool()
+def wxcc_list_entries(entity: str, parent_id: str) -> dict:
+    """List the entries inside one address-book or outdial-ani.
+
+    Read from the parent object: the child collection has no GET (405).
+    """
+    _child_spec(entity)
+    client = _client()
+    entries = _parent_entries(client, entity, parent_id)
+    return {"tenant": _tenant(client), "entity": entity, "parent_id": parent_id,
+            "count": len(entries), "entries": entries}
+
+
+@mcp.tool()
+def wxcc_add_entry(entity: str, parent_id: str, fields: dict,
+                   confirm: bool = False) -> dict:
+    """Add ONE entry to an address-book or outdial-ani.
+
+    Prefer this over updating the parent's entries array: it cannot delete the
+    other entries by omission, and it has no sub-entity-id 409 trap.
+
+    confirm=False (default) writes nothing and returns a preview.
+    """
+    spec = _child_spec(entity)
+    missing = [f for f in spec.get("child_create", []) if f not in fields]
+    if missing:
+        return {"error": "missing required fields", "missing": missing,
+                "required": spec.get("child_create")}
+
+    client = _client()
+    if not confirm:
+        return {"TENANT": _tenant(client), "dry_run": True,
+                "action": f"POST {_child_path(entity, parent_id)}",
+                "would_add": fields,
+                "existing_count": len(_parent_entries(client, entity, parent_id)),
+                "note": spec.get("note"),
+                "rollback": "wxcc_remove_entry with the returned entry id",
+                "next": "re-call with confirm=True once the user approves"}
+
+    status, body = client.json("POST", _child_path(entity, parent_id), fields)
+    if status >= 400:
+        return {"added": False, "http": status, "error": body}
+    new_id = (body or {}).get("id")
+    entries = _parent_entries(client, entity, parent_id)
+    return {"TENANT": _tenant(client), "added": True, "http": status, "id": new_id,
+            "verified_in_parent": any(e.get("id") == new_id for e in entries),
+            "entries_now": [{k: e.get(k) for k in ("id", "name", "number")}
+                            for e in entries],
+            "rollback": f"wxcc_remove_entry(entity='{entity}', "
+                        f"parent_id='{parent_id}', entry_id='{new_id}', confirm=True)"}
+
+
+@mcp.tool()
+def wxcc_update_entry(entity: str, parent_id: str, entry_id: str, changes: dict,
+                      confirm: bool = False) -> dict:
+    """Change ONE entry in an address-book or outdial-ani (read-modify-write)."""
+    spec = _child_spec(entity)
+    client = _client()
+    current = next((e for e in _parent_entries(client, entity, parent_id)
+                    if e.get("id") == entry_id), None)
+    if current is None:
+        return {"error": f"entry {entry_id} not found on {entity}/{parent_id}"}
+
+    diff = {k: {"from": current.get(k), "to": v}
+            for k, v in changes.items() if current.get(k) != v}
+    if not diff:
+        return {"no_op": True, "reason": "every requested value already matches"}
+
+    if not confirm:
+        return {"TENANT": _tenant(client), "dry_run": True,
+                "action": f"PUT {_child_path(entity, parent_id, entry_id)}",
+                "diff": diff, "note": spec.get("note"),
+                "rollback": "wxcc_update_entry with the values shown under 'from'",
+                "next": "re-call with confirm=True once the user approves"}
+
+    body = {**_strip(current), **changes, "id": entry_id}
+    status, resp = client.json("PUT", _child_path(entity, parent_id, entry_id), body)
+    if status >= 400:
+        return {"updated": False, "http": status, "error": resp}
+
+    after = next((e for e in _parent_entries(client, entity, parent_id)
+                  if e.get("id") == entry_id), {})
+    ignored = {k: {"requested": v, "actual": after.get(k)}
+               for k, v in changes.items()
+               if not isinstance(v, (list, dict)) and after.get(k) != v}
+    return {"TENANT": _tenant(client), "updated": True, "http": status,
+            "confirmed_changed": {k: after.get(k) for k in changes if k not in ignored},
+            "SILENTLY_IGNORED": ignored or None,
+            "rollback": {k: v["from"] for k, v in diff.items()}}
+
+
+@mcp.tool()
+def wxcc_remove_entry(entity: str, parent_id: str, entry_id: str,
+                      confirm: bool = False) -> dict:
+    """Remove ONE entry from an address-book or outdial-ani. Not reversible."""
+    _child_spec(entity)
+    client = _client()
+    current = next((e for e in _parent_entries(client, entity, parent_id)
+                    if e.get("id") == entry_id), None)
+    if current is None:
+        return {"error": f"entry {entry_id} not found on {entity}/{parent_id}"}
+
+    if not confirm:
+        return {"TENANT": _tenant(client), "dry_run": True,
+                "action": f"DELETE {_child_path(entity, parent_id, entry_id)}",
+                "would_remove": current,
+                "rollback": "NONE via the API - re-adding produces a NEW entry id",
+                "next": "re-call with confirm=True only after an explicit yes"}
+
+    status, body = client.json("DELETE", _child_path(entity, parent_id, entry_id))
+    if status >= 400:
+        return {"removed": False, "http": status, "error": body}
+    entries = _parent_entries(client, entity, parent_id)
+    return {"TENANT": _tenant(client), "removed": True, "http": status,
+            "verified_gone": not any(e.get("id") == entry_id for e in entries),
+            "entries_now": [{k: e.get(k) for k in ("id", "name", "number")}
+                            for e in entries]}
 
 
 # --------------------------------------------------------------------------- #

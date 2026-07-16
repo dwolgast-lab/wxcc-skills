@@ -1,6 +1,6 @@
 ---
 name: wxcc-address-books
-description: Use when asked about Webex Contact Center address books or their entries (speed-dial directories agents see) - "list address books", "create an address book", "add/update/remove an entry in address book X", "what numbers are in address book X", "delete address book X". Books have full MCP tool coverage; entry-level writes currently need the CLI.
+description: Use when asked about Webex Contact Center address books or their entries (speed-dial directories agents see) - "list address books", "create an address book", "add/update/remove an entry in address book X", "what numbers are in address book X", "delete address book X". Full CRUD on both the book and its individual entries.
 ---
 
 # wxcc-address-books — address books and their entries (read + write)
@@ -8,13 +8,8 @@ description: Use when asked about Webex Contact Center address books or their en
 Call the `wxcc_*` MCP tools with `entity="address-book"` on the server for the tenant the
 user named. **If no tenant was named, ask — do not guess.**
 
-Two-level entity: the **book**, and its **entries** (`{name, number}` pairs).
-
-> **Coverage gap, stated plainly:** the MCP tools cover the **book**. Entries are a
-> sub-resource (`address-book/{id}/entry`) and the entity registry has **no tool for them
-> yet**. Create entries by embedding them at book creation (below); for entry-level
-> add/update/delete on an existing book, fall back to the CLI recipes at the bottom — and
-> know you lose the dry-run, the tenant stamp, and the re-read verification when you do.
+Two-level entity: the **book**, and its **entries** (`{name, number}` pairs). Entries are a
+sub-resource with their own tools — touch one at a time rather than replacing the array.
 
 ## Use when / Do NOT use when
 
@@ -53,25 +48,28 @@ through the tools. `parentType: "SITE"` with a `siteId` exists per Cisco's colle
 
 **Deleting a book deletes its entries with it. No rollback.**
 
-## Entry-level writes — CLI fallback (no tool coverage yet)
+## Writes — entries
 
-Get entry ids from `wxcc_get(entity="address-book", id=...)`. These bypass the write
-safety layer, so confirm with the user and re-read afterward **by hand**:
-
-```bash
-python wxcc.py post "organization/{orgId}/address-book/BOOK-ID/entry" --body '{"name":"Bob","number":"+15557654321"}'
-python wxcc.py put "organization/{orgId}/address-book/BOOK-ID/entry/ENTRY-ID" --body '{"id":"ENTRY-ID","name":"Bob Renamed","number":"+15557654321"}'
-python wxcc.py delete "organization/{orgId}/address-book/BOOK-ID/entry/ENTRY-ID"
+```
+wxcc_list_entries(entity="address-book", parent_id="BOOK-ID")
+wxcc_add_entry(entity="address-book", parent_id="BOOK-ID",
+               fields={"name": "Bob", "number": "+15557654321"})
+wxcc_update_entry(entity="address-book", parent_id="BOOK-ID", entry_id="ENTRY-ID",
+                  changes={"name": "Bob Renamed"})
+wxcc_remove_entry(entity="address-book", parent_id="BOOK-ID", entry_id="ENTRY-ID")
 ```
 
-⚠️ **The CLI uses whatever tenant `WXCC_PROFILE` resolves to in the shell — not the MCP
-server you were just using.** Check `python wxcc.py auth status` before any entry write, or
-set `WXCC_PROFILE` explicitly.
+Each is dry-run by default and verified by re-reading the parent. All confirmed live
+2026-07-16 (201/200/204).
+
+**`GET .../entry` returns 405** — the child collection has no list endpoint, so entries are
+read from the parent object. `wxcc_list_entries` does that for you.
+
+Removing an entry has **no rollback**: re-adding produces a new entry id.
 
 ## Provenance and maintenance
 
-Full two-level CRUD run live on a us1 sandbox 2026-07-11 via the CLI (book 201/204, entry
-201/200/204, tenant returned to zero books). Book-level operations re-confirmed through the
-MCP tools 2026-07-14. Body shapes from Cisco's Postman collection (v3, Aug 2023), each
-confirmed live. **Follow-up:** add `address-book-entry` to the registry so entries get the
-same dry-run/verify treatment as everything else.
+Full two-level CRUD run live on a us1 sandbox 2026-07-11 (book 201/204, entry 201/200/204,
+tenant returned to zero books). Re-verified end-to-end through the MCP tools 2026-07-16,
+including the 405 on the child collection. Body shapes from Cisco's Postman collection (v3,
+Aug 2023), each confirmed live. Re-verify with a `zz-` named book + entry cycle.

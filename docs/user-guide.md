@@ -259,6 +259,7 @@ resolves to in your shell — **not** the MCP server you were just talking to.
 | `wxcc_whoami` | Which tenant am I actually on? Scopes, org, live read check |
 | `wxcc_list` / `wxcc_get` | Read any of 13 entities |
 | `wxcc_create` / `wxcc_update` / `wxcc_delete` | Write, with dry-run + verify + reference-blocking |
+| `wxcc_list_entries` / `wxcc_add_entry` / `wxcc_update_entry` / `wxcc_remove_entry` | One entry at a time inside an address-book or outdial-ani |
 | `wxcc_search_tasks` | Calls/tasks/agent sessions (GraphQL) |
 | `wxcc_webhooks` | Event types + subscription CRUD |
 
@@ -274,10 +275,8 @@ Entities: `user`, `team`, `site`, `contact-service-queue`, `entry-point`, `dial-
   read-only.
 - **Phone numbers cannot be invented** — dial-number records map numbers already in the
   Webex Calling inventory. A fictional number returns 404, not 400.
-- **Refused because unproven, not because impossible:** site writes, `outdial-ani` update
-  (so "add a number to an existing ANI list" has no verified path), `agent-profile`
+- **Refused because unproven, not because impossible:** site writes and `agent-profile`
   create/delete. The tools refuse rather than guess.
-- **Address-book *entries* have no tool** — embed them at book creation, or use the CLI.
 - **Webhook delivery payloads are unverified** — needs a real receiving endpoint.
 - **Flows are out of scope by design.** Cisco ships its own `flow-store` MCP server; run it
   alongside this one. This repo owns the config flows bind to — entry points, queues, teams,
@@ -287,7 +286,7 @@ Entities: `user`, `team`, `site`, `contact-service-queue`, `entry-point`, `dial-
 
 ## Roadmap
 
-Address-book entry tools · `outdial-ani` update · bulk-export · GraphQL aggregations
+Bulk-export · GraphQL aggregations
 (wallboard formulas) · site writes · an expected-org guard for cloud servers.
 
 ---
