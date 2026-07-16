@@ -51,16 +51,27 @@ WxCC** — ignore them; do not build on them.
 ## Update
 
 ```
-wxcc_update(entity="agent-profile", id="PROFILE-ID", changes={"autoWrapAfterSeconds": 30})
+wxcc_update(entity="agent-profile", id="PROFILE-ID", changes={"autoAnswer": true})
 ```
 
-Verified by a live no-op PUT (200, 2026-07-11). The tool does the read-modify-write and
-re-reads afterward.
+Verified live 2026-07-16: `autoAnswer` and `description` each changed → re-read → reverted.
+The tool does the read-modify-write and re-reads afterward; check `SILENTLY_IGNORED`.
 
-**Field-level changes are candidates until you run one.** And the blast radius is real:
-profiles are referenced by users, so a bad change hits **every agent on the profile at next
-login**. Check the `SILENTLY_IGNORED` map on the result — this API family is known to return
-200 while dropping fields (**wxcc-users-write**).
+**Some fields are paired and must move together.** Reproduced live:
+
+```
+wxcc_update(..., changes={"autoWrapAfterSeconds": 7})                      # 400
+#  -> "autoWrapAfterSeconds should be specified when autoWrapUp is true"
+wxcc_update(..., changes={"autoWrapUp": true, "autoWrapAfterSeconds": 7})  # 200
+```
+
+The `access*` switches (`accessQueue`/`queues`, `accessIdleCode`/`idleCodes`, …) are the
+same shape: ALL/SPECIFIC paired with an id list. Expect flipping one without the other to
+fail the same way — **candidate**, not yet run.
+
+**Blast radius is real:** profiles are referenced by users, so a bad change hits **every
+agent on the profile at next login**. Probe on an unreferenced profile
+(`wxcc_delete` dry-run tells you if anything points at one) or a throwaway clone.
 
 ## Create — clone an existing profile
 
@@ -96,6 +107,7 @@ user pointing at the old one breaks.
 | 409 "Internal error. Contact Cisco Support" on create | You reused a nested `id` (usually `viewableStatistics`). Not a Cisco outage — a borrowed sub-entity id. |
 | `access*` switches | ALL/SPECIFIC paired with an id list. Reading the list alone misleads when the switch says ALL. |
 | `dialPlanEnabled`/`dialPlans` | Still in responses; **Dial Plan is deprecated in WxCC**. Ignore. |
+| Paired fields | `autoWrapAfterSeconds` alone → 400; send `autoWrapUp` with it. The `access*` switch/list pairs are likely the same (candidate). |
 | Blast radius | Users reference profiles — a bad change hits every agent on it at next login. |
 | Bulk / purge endpoints | `POST agent-profile/bulk` and `POST agent-profile/purge-inactive-entities` exist. **Neither is probed or exposed** — purge especially is mass-destructive. Do not improvise. |
 
@@ -106,5 +118,13 @@ Reads and a no-op PUT (200) run live 2026-07-11; re-confirmed on the gold tenant
 the 409-on-nested-id, which was reproduced twice and isolated to `viewableStatistics`;
 reference-blocking confirmed against a profile with 12 users; baseline of 5 restored. Dial
 Plan deprecation and the Desktop-Profile naming directive confirmed by the tenant owner
-2026-07-11. Field-level update remains a candidate — verify with a change→re-read→revert
-cycle on a sandbox profile.
+2026-07-11. **Field-level update verified 2026-07-16** on an unreferenced profile:
+`autoAnswer` and `description` each changed → re-read → reverted; the paired-field 400 on
+`autoWrapAfterSeconds` was reproduced and isolated (setting it with `autoWrapUp` → 200,
+then reverted). The `access*` switch/list pairing is inferred from the same shape, not run.
+
+Cisco's published API reference for this endpoint could not be read (the page is a JS SPA
+that exceeds fetch limits and whose reference body does not render headless). Everything
+here is from the live tenant, which has twice contradicted Cisco's own Postman collection
+for this entity — the collection listed DELETE but no create, and missed the entry
+sub-resource on sibling entities entirely.

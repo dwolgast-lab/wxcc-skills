@@ -155,8 +155,11 @@ ENTITIES: dict[str, dict[str, Any]] = {
                 "first - `viewableStatistics` is a dict carrying its own id, and "
                 "reusing it returns 409 'Internal error. Please contact Cisco Support "
                 "Team', which names nothing. wxcc_create strips them for you. "
-                "The access* fields are ALL/SPECIFIC switches paired with id lists - "
-                "reading the list alone misleads when the switch says ALL. "
+                "Several fields are PAIRED and must move together: autoWrapAfterSeconds "
+                "alone is a 400 ('should be specified when autoWrapUp is true') - send "
+                "autoWrapUp with it. The access* fields are ALL/SPECIFIC switches paired "
+                "with id lists - reading the list alone misleads when the switch says "
+                "ALL, and flipping one without the other is likely the same shape. "
                 "dialPlanEnabled/dialPlans still appear but Dial Plan is DEPRECATED in "
                 "WxCC - ignore them. A profile is referenced by users, so a bad change "
                 "hits every agent on it at next login.",
