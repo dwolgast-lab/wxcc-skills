@@ -5,7 +5,51 @@ Notable changes to the wxcc-skills library. Format loosely follows
 
 ## Unreleased
 
-- **The helper graduated into an MCP server.** `mcp_server.py` exposes 8 tools over a
+- **Sites are writable.** Full lifecycle verified live: create 201, rename 200, delete 204,
+  each confirmed by re-read. All three create fields (`name`, `active`,
+  `multimediaProfileId`) are required — the 400 names the missing ones. Deleting a
+  referenced site is pre-flighted; a live site showed 15 blockers across teams and users.
+- **GraphQL aggregations verified** (they were candidate syntax from Cisco's collection):
+  types are `count|sum|average|min|max|cardinality` (`avg` is rejected); the scalar fields
+  selected in `tasks{}` become the GROUP BY keys; `filter:` composes. By-queue counts were
+  cross-checked against the plain-count baseline. Also fixed a fabricated example in
+  `wxcc-tasks-search`: `queue { name }` does not exist — the field is `lastQueue`, and a
+  `lastQueue: null` group is real data (tasks that never touched a queue).
+- **Desktop Profile writes closed**: create 201, delete 204, and field-level update 200,
+  all verified live (previously refused as unprobed). Create means cloning a sibling, and
+  the naive clone 409s with an uninformative "Internal error" — isolated to a nested
+  sub-entity id, so `wxcc_create` now strips nested ids for entities marked
+  `clone_safe: false`. Found the paired-field rule: `autoWrapAfterSeconds` alone is a
+  clean 400 — it must travel with `autoWrapUp`.
+- **The delete pre-flight now asks the API itself**: `GET {entity}/{id}/incoming-references`
+  exists on every entity tested (10 of 10) and is authoritative, retiring the hand-written
+  reference map — which was provably incomplete (12 blockers found by hand vs. 15 by the
+  API on the same object). Reading it right matters: `data[]` holds only
+  `meta.currentEntity` — walk `?type=<each>` per referencing type.
+- **A wrong-tenant login is now refused by the cloud server**, not just detectable: a
+  client entry declares its org (`?org=<id>` on the URL or `X-WXCC-Expected-Org`) and a
+  token from any other org gets **403 `wrong_tenant`** naming both orgs. The org is read
+  from the token itself, so it cannot be spoofed; declaring nothing keeps the old
+  behaviour. Also fixed: `allowed_hosts` hardcoded port 8080 (any other local port
+  answered 421 Misdirected Request); it now derives from `WXCC_PUBLIC_URL`.
+- **Cloud teammate onboarding documented** — two commands, no repo, no Python, no `.env`.
+  What actually gates it: the teammate must be a CC admin of that tenant (OAuth is
+  per-user), needs the Integration's client secret (Webex has no public client), and their
+  org must be in `WXCC_ALLOWED_ORGS` — a gcloud step, not self-service. `WXCC_API_BASE` is
+  per-service, so another region needs its own Cloud Run service.
+- **Entry sub-resource tools**: `wxcc_list_entries` / `wxcc_add_entry` /
+  `wxcc_update_entry` / `wxcc_remove_entry` for `outdial-ani` and `address-book`, verified
+  live (POST 201 / PUT 200 / DELETE 204; GET on the child collection is 405 — entries are
+  read from the parent). Retires the earlier full-replace advice, which was accurate and
+  dangerous: an entry you omit is deleted, and a kept entry without its own id 409s.
+- **`SILENTLY_IGNORED` no longer cries wolf.** The API enriches sub-objects with
+  ids/timestamps and reorders arrays, so a correct array write used to be flagged as
+  ignored. Scalars are still compared exactly; complex values are reported under
+  `needs_your_eyes` with the actual value to read. The real trap
+  (`userLevelSummariesInclusion`: 200 but unchanged) is still caught — its enum is
+  `EXCLUDED | NOT_APPLICABLE | INCLUDED`, so the silent ignore is entitlement-gated, not
+  validation.
+- **The helper graduated into an MCP server.** `mcp_server.py` exposes 12 tools over a
   13-entity registry. Writes are dry-run by default; `confirm=true` executes, then
   **re-reads and diffs**, reporting `SILENTLY_IGNORED` when the API returns 200 but drops
   a field. Deletes pre-flight references and block with a list of conflicts instead of
