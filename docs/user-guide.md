@@ -104,7 +104,9 @@ claude          # interactive: review and approve the project MCP server, then /
 
 Project MCP servers require an interactive approval — Claude cannot approve itself, and a
 non-interactive shell cannot either. **Renaming a server invalidates its approval**, so this
-step repeats if you rename one.
+step repeats if you rename one. This gate is specific to project scope (`.mcp.json` is
+checked-in, so it is treated as untrusted input); a `--scope user` server has no approval
+step at all — see the teammate path below.
 
 Then restart Claude Code so it loads the server.
 
@@ -262,7 +264,11 @@ MCP_CLIENT_SECRET=<integration secret> claude mcp add-json wxcc-acme `
 claude mcp login wxcc-acme --no-browser     # paste the URL into a private window
 ```
 
-`--scope user` keeps it out of any repo directory, so it works from anywhere.
+`--scope user` keeps it out of any repo directory, so it works from anywhere — and it
+needs **no interactive approval**: that gate exists only for project-scope `.mcp.json`
+servers. Confirmed live 2026-07-17 — a user-scope server's tool ran in a fresh
+non-interactive session with no approval recorded anywhere. The two commands above really
+are the whole setup.
 
 Then: **"run wxcc_whoami"**. It must name the tenant they expect.
 
