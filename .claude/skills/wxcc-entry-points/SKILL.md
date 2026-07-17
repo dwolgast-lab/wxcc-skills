@@ -45,7 +45,7 @@ Fields observed live (2026-07-11): `name`, `active`, `channelType`, `entryPointT
 |---|---|
 | All DNs | `wxcc_list(entity="dial-number", attributes="id,dialledNumber,entryPointId", all_pages=true)` |
 | Numbers reaching EP X | `wxcc_list(entity="dial-number", filter="entryPointId==EP-ID")` |
-| **Which EP does a number route to** | `wxcc_list(entity="dial-number", filter="dialledNumberDigits==15551234567")` → resolve the returned `entryPointId` with `wxcc_get(entity="entry-point", ...)` |
+| **Which EP does a number route to** | `wxcc_list(entity="dial-number", filter="dialledNumber==+15551234567")` → resolve the returned `entryPointId` with `wxcc_get(entity="entry-point", ...)`. `dialledNumberDigits==15551234567` works equally |
 | One DN | `wxcc_get(entity="dial-number", id="DN-ID")` |
 
 **DN objects have no `name` field.** Key fields: `dialledNumber` (E.164 with `+`, note the
@@ -56,15 +56,16 @@ double-L), `dialledNumberDigits` (digits only), `entryPointId`, `defaultAni`, `l
 
 | Trap | Result | Do this |
 |---|---|---|
-| `filter=dialledNumber==+1719...` (raw `+`) | **HTTP 200 with 0 records — a silent wrong answer.** The `+` decodes to a space. | Use `dialledNumberDigits==1719...`, or encode `%2B1719...` |
+| Raw `+` in a filter/search value **via the CLI** | **HTTP 200 with 0 records — a silent wrong answer.** The `+` decodes to a space. | Through `wxcc_list` this is fixed (the tool URL-encodes values, verified live 2026-07-17): pass `dialledNumber==+1719...` raw. CLI fallback: `dialledNumberDigits==` or `%2B` |
 | `filter=name==...` on a dial-number | Meaningless — DNs have no name | Filter by `entryPointId`, `dialledNumber`, or `dialledNumberDigits` |
-| Quoted filter values | HTTP 400 | Unquoted |
+| Quoted filter values **via the CLI** | HTTP 400 — raw quotes die in transport, not in RSQL | Via `wxcc_list` either quote style works; quote any value containing a space |
 | Filterable fields | EP: `id`, `name`. DN: `entryPointId`, `dialledNumber`, `dialledNumberDigits` | Others are candidates |
-| `search=` on dial-number | **Untested — candidate** | Confirmed on EP only |
+| `search=` on dial-number | **Confirmed 2026-07-17** — substring over the number digits | `search="5551234"` finds `+15551234567`; a mid-number substring matched exactly the expected DNs live. Raw `+` in search is also safe via the tool |
 
-The raw-`+` trap is the worst kind: it does not error, it answers "no numbers found" and
-looks correct. If a number lookup comes back empty, retry with `dialledNumberDigits`
-before telling the user the number is not mapped.
+The raw-`+` trap was the worst kind: no error, just "no numbers found" that looks correct.
+`wxcc_list` now encodes it away, but the CLI path does not — if a CLI number lookup comes
+back empty, retry with `dialledNumberDigits` before telling the user the number is not
+mapped.
 
 ## Provenance and maintenance
 

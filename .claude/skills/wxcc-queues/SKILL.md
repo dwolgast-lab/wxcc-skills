@@ -49,8 +49,8 @@ Tenant-observed, not contract.
 | Trap | Why | Do this |
 |---|---|---|
 | `entity="queue"` | The path 404s | Use `contact-service-queue` |
-| `filter=name=="X"` (quoted) | HTTP 400 | Unquoted: `filter=name==X` |
-| Filter values with spaces | Untested | Candidate: `%20`. Prefer `search=`. |
+| `filter=name=="X"` quoted, **via the CLI** | HTTP 400 — raw quotes die in transport | Via `wxcc_list` either quote style works; plain values need no quotes |
+| Filter values with spaces | Bare space is an RSQL syntax error | Quote the value: `filter="name=='Inside Sales'"` (verified live 2026-07-17; pass raw characters — the tool encodes) |
 | Filterable fields | Only `id`, `name` confirmed | Others are candidates |
 
 ## Provenance and maintenance

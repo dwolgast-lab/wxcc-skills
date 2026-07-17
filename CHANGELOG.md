@@ -5,6 +5,15 @@ Notable changes to the wxcc-skills library. Format loosely follows
 
 ## Unreleased
 
+- **`wxcc_list` now URL-encodes filter/search/attributes values**, which kills the
+  raw-`+` silent-zero trap at the tool layer: `dialledNumber==+1719...` and a `+` in
+  `search=` now match (verified live — the same search returned 0 of 2 records before the
+  fix). The spaces question is answered too: a bare space inside an RSQL value is a syntax
+  error, but a *quoted* value works — and the old "quoted values → 400" rule turns out to
+  have been transport-layer all along (raw quotes rejected before RSQL ever parsed them;
+  encoded, both quote styles parse fine). DN `search=` confirmed: substring match over the
+  number digits. Callers pass raw characters now — pre-encoding would double-encode. The
+  CLI path keeps all the old traps.
 - **Sites are writable.** Full lifecycle verified live: create 201, rename 200, delete 204,
   each confirmed by re-read. All three create fields (`name`, `active`,
   `multimediaProfileId`) are required — the 400 names the missing ones. Deleting a

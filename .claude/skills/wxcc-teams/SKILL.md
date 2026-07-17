@@ -48,8 +48,8 @@ has no desktop seats behind it — say so rather than treating it like an agent 
 
 | Trap | Why | Do this |
 |---|---|---|
-| `filter=name=="X"` (quoted) | HTTP 400 | Unquoted: `filter=name==X` |
-| Filter values containing spaces | Untested | Candidate: URL-encode as `%20`. Prefer `search=`. |
+| `filter=name=="X"` quoted, **via the CLI** | HTTP 400 — raw quotes die in transport | Via `wxcc_list` either quote style works; plain values need no quotes |
+| Filter values containing spaces | Bare space is an RSQL syntax error | Quote the value: `filter="name=='Team Name Here'"` (verified live on a team 2026-07-17; pass raw characters — the tool encodes) |
 | Filterable fields | Only `id` and `name` are confirmed | Others are candidates — verify before relying |
 
 Path shape, the v2-on-item-path 404, and pagination are handled by the tool's entity

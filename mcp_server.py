@@ -16,6 +16,7 @@ Run locally:  claude mcp add --transport stdio wxcc -- python mcp_server.py
 from __future__ import annotations
 
 import json
+import urllib.parse
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
@@ -95,9 +96,10 @@ ENTITIES: dict[str, dict[str, Any]] = {
         "writes": ["create", "update"],
         "note": "Field is `dialledNumber` (double L). Numbers CANNOT be invented: "
                 "create 404s with 'Dialed number does not exist' unless the number "
-                "is already in the Webex Calling location inventory. Filtering on a "
-                "raw '+' silently returns 0 records - use dialledNumberDigits==. "
-                "DELETE is unprobed and would unmap a live number.",
+                "is already in the Webex Calling location inventory. Filter/search "
+                "with a raw '+' works here (the tool URL-encodes values); only the "
+                "CLI path still needs dialledNumberDigits==. DELETE is unprobed "
+                "and would unmap a live number.",
     },
     "skill": {
         "list": "v2/skill", "item": "skill/{id}",
@@ -425,19 +427,27 @@ def wxcc_list(entity: str, filter: str = "", search: str = "",
     """List a WxCC config entity (team, contact-service-queue, entry-point, ...).
 
     entity     : one of the registry keys. Call wxcc_whoami to see them all.
-    filter     : FIQL, e.g. `name==Sales`. Values must be UNQUOTED - quoting
-                 them returns 400. A raw '+' in a value silently returns 0 rows.
-    search     : substring match across fields.
+    filter     : FIQL, e.g. `name==Sales`. Pass RAW characters - this tool
+                 URL-encodes for transport, so `+` and spaces are safe here.
+                 SINGLE-quote a value containing a space (`name=='Inside Sales'`)
+                 - that is RSQL syntax, not encoding. Raw double quotes are
+                 rejected before RSQL ever parses them.
+    search     : substring match across fields. Raw characters; spaces and '+'
+                 are fine.
     attributes : projection, e.g. `id,name,active`.
     all_pages  : follow pagination to exhaustion.
     """
     spec = _entity(entity)
     client = _client()
     q = [f"pageSize={page_size}"]
-    for key, val in (("filter", filter), ("search", search),
-                     ("attributes", attributes)):
+    # Encode values for transport: a raw '+' otherwise decodes server-side to a
+    # space (silent 0 rows), and a raw space is refused by urllib outright.
+    # FIQL syntax characters stay literal in filter; search is opaque.
+    for key, val, safe in (("filter", filter, "=!<>;,()'*~"),
+                           ("search", search, ""),
+                           ("attributes", attributes, ",")):
         if val:
-            q.append(f"{key}={val}")
+            q.append(f"{key}={urllib.parse.quote(val, safe=safe)}")
     path = _path(entity) + "?" + "&".join(q)
 
     if all_pages:
