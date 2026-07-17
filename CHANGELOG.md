@@ -3,17 +3,27 @@
 Notable changes to the wxcc-skills library. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); entries are dated, newest first.
 
-## Unreleased
-
-- **`multimedia-profile` is now a first-class read-only entity** (14th in the registry),
-  closing the gap `wxcc-sites` had been flagging: a site's `multimediaProfileId` can now be
-  resolved to a name and its channel caps instead of being an opaque id. New
-  `wxcc-multimedia-profiles` skill; `wxcc-sites` now routes there. Writes are deliberately
-  unproven, so `wxcc_create`/`update`/`delete` refuse it (a profile is referenced by sites —
-  a bad write would hit every agent there). Read paths verified live: list
-  `v2/multimedia-profile`, item `multimedia-profile/{id}` (drops v2 — `v2/.../{id}` 404s),
-  `filter=name==` works. The per-channel integers (telephony/chat/email/...) are
-  concurrent-contact caps, not booleans — documented as a trap.
+- **`multimedia-profile` now has verified full CRUD** (14th registry entity), closing the
+  gap `wxcc-sites` had been flagging: a site's `multimediaProfileId` can be resolved to a
+  name and channel caps, and profiles can be created/updated/deleted. New
+  `wxcc-multimedia-profiles` (read) and `wxcc-multimedia-profiles-write` skills;
+  `wxcc-sites` routes to them. All paths and the write contract verified live on the
+  sandbox and re-verified through the MCP tools (create 201, update 200, delete 204,
+  baseline restored): list `v2/multimedia-profile`, item/create paths drop v2
+  (`v2/.../{id}` 404s), `filter=name==` works. Required create fields: name, active, the
+  four channel caps (telephony/chat/email/social), blendingMode
+  (`BLENDED|BLENDED_REALTIME|EXCLUSIVE`), blendingModeEnabled, and the nested
+  `manuallyAssignable`. The per-channel integers are concurrent-contact caps, not booleans.
+  Delete is reference-blocked by sites via the incoming-references pre-flight.
+- **`wxcc_update` gained an adaptive feature-flag retry.** A read-modify-write PUT re-sends
+  every field the GET returned, including ones a tenant is not entitled to write — the API
+  returns `multimedia-profile.workItem` on GET (top-level and nested in `manuallyAssignable`)
+  but rejects it on PUT when the workItem feature flag is off (`400 "workItem is not allowed
+  when feature flag is disabled"`). The tool now strips exactly the field the API names and
+  retries once, reporting it under `stripped_for_feature_flag`. This is discovered per call,
+  not hardcoded — a flag-enabled tenant's first PUT succeeds and nothing is stripped — and it
+  only triggers on that specific 400, so every other entity's update is unaffected
+  (regression-checked with a site update round-trip).
 - **New teammate one-pager**: [`docs/cloud-mcp-onboarding.md`](docs/cloud-mcp-onboarding.md)
   (+ auto-built PDF) — explicit, no-assumed-knowledge steps for connecting Claude Code to a
   cloud `wxcc-mcp` tenant, written for someone new to both Claude Code and this project.

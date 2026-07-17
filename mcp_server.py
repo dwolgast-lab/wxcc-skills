@@ -16,6 +16,7 @@ Run locally:  claude mcp add --transport stdio wxcc -- python mcp_server.py
 from __future__ import annotations
 
 import json
+import re
 import urllib.parse
 from typing import Any
 
@@ -182,11 +183,20 @@ ENTITIES: dict[str, dict[str, Any]] = {
     },
     "multimedia-profile": {
         "list": "v2/multimedia-profile", "item": "multimedia-profile/{id}",
-        "note": "Read-only here - writes are unprobed, so create/update/delete refuse. "
-                "This is what a site's `multimediaProfileId` points at; resolve the id "
-                "here. The per-channel integers (telephony/chat/email/social/...) are "
-                "concurrent-contact caps, not booleans. `systemDefault: true` marks the "
-                "tenant default. Item path drops v2 (v2/.../{id} 404s), like team/site/user.",
+        "create": ["name", "active", "telephony", "chat", "email", "social",
+                   "blendingMode", "blendingModeEnabled", "manuallyAssignable"],
+        "writes": ["create", "update", "delete"],
+        "note": "This is what a site's `multimediaProfileId` points at. The per-channel "
+                "integers (telephony/chat/email/social/...) are concurrent-contact caps, "
+                "not booleans. blendingMode is BLENDED | BLENDED_REALTIME | EXCLUSIVE; "
+                "manuallyAssignable is a REQUIRED nested {channel:int} object. "
+                "WORKITEM TRAP: the API returns `workItem` (top-level AND inside "
+                "manuallyAssignable) on GET but REJECTS it on PUT when the workItem "
+                "feature flag is off (400 'workItem is not allowed when feature flag is "
+                "disabled'). wxcc_update strips exactly the field the API names and "
+                "retries, so a read-modify-write update still works; the stripped field "
+                "is reported. Delete is reference-blocked by sites (pre-flight). "
+                "Item/create paths drop v2 (v2/.../{id} 404s), like team/site/user.",
     },
 }
 
@@ -357,6 +367,42 @@ def _read(client: wxcc.WxccClient, entity: str, item_id: str) -> dict:
     if status >= 400:
         raise ValueError(f"cannot read {entity}/{item_id}: HTTP {status} {body}")
     return body
+
+
+# A read-modify-write PUT re-sends every field the GET returned - including ones
+# this tenant is not entitled to write, which the API returns on GET but rejects
+# on PUT with "<field> is not allowed when feature flag is disabled" (seen on
+# multimedia-profile.workItem, at the top level AND nested in manuallyAssignable,
+# when the workItem feature flag is off). Whether a field is writable is
+# tenant-state, not contract, so this is discovered per call, not hardcoded: a
+# flag-ENABLED tenant's first PUT succeeds and nothing is stripped.
+_FLAG_DENY = re.compile(r"(\w+) is not allowed when feature flag is disabled")
+
+
+def _drop_key(obj: Any, key: str) -> Any:
+    """Remove `key` at every nesting level."""
+    if isinstance(obj, dict):
+        return {k: _drop_key(v, key) for k, v in obj.items() if k != key}
+    if isinstance(obj, list):
+        return [_drop_key(i, key) for i in obj]
+    return obj
+
+
+def _put_adaptive(client: wxcc.WxccClient, path: str, body: dict) -> tuple[int, Any, list[str]]:
+    """PUT; if the API rejects a field ONLY because its feature flag is off, drop
+    exactly that field (at any depth) and retry. Returns (status, body, stripped).
+    Strips nothing on any other error, and never the same field twice."""
+    status, out = client.json("PUT", path, body)
+    stripped: list[str] = []
+    while status >= 400 and isinstance(out, dict):
+        reason = (out.get("error") or {}).get("reason") or ""
+        m = _FLAG_DENY.search(reason)
+        if not m or m.group(1) in stripped:
+            break
+        body = _drop_key(body, m.group(1))
+        stripped.append(m.group(1))
+        status, out = client.json("PUT", path, body)
+    return status, out, stripped
 
 
 # --------------------------------------------------------------------------- #
@@ -560,7 +606,7 @@ def wxcc_update(entity: str, id: str, changes: dict, confirm: bool = False) -> d
                             "'from' above",
                 "next": "re-call with confirm=True once the user approves"}
 
-    status, body = client.json("PUT", _path(entity, id), proposed)
+    status, body, stripped = _put_adaptive(client, _path(entity, id), proposed)
     if status >= 400:
         return {"updated": False, "http": status, "error": body,
                 "note": spec.get("note")}
@@ -585,6 +631,12 @@ def wxcc_update(entity: str, id: str, changes: dict, confirm: bool = False) -> d
         "TENANT": _tenant(client),
         "updated": True, "http": status,
         "confirmed_changed": applied or None,
+        "stripped_for_feature_flag": ({
+            "fields": stripped,
+            "why": "The tenant is not entitled to write these (feature flag off); "
+                   "they were dropped from the PUT so the rest could apply. Harmless "
+                   "unless the user asked to change one - then it shows as ignored.",
+        } if stripped else None),
         "SILENTLY_IGNORED": ignored or None,
         "warning": ("The API returned 200 but did NOT apply the fields under "
                     "SILENTLY_IGNORED. Tell the user; do not report success.")

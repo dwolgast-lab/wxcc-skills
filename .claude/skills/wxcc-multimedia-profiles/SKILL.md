@@ -25,10 +25,8 @@ new site.
 **Do NOT use when:**
 - Auth errors, or `wxcc_whoami` reports the wrong org → **wxcc-connect**.
 - Working with the site that references a profile → **wxcc-sites**.
-- **Creating, updating, or deleting a multimedia profile** → not supported. Writes have
-  never been probed against a live tenant, so the registry does not claim them —
-  `wxcc_create`/`wxcc_update`/`wxcc_delete` refuse `multimedia-profile`. Do not improvise
-  via the CLI.
+- **Creating, updating, or deleting a multimedia profile** → **wxcc-multimedia-profiles-write**
+  (verified full CRUD; the `workItem` PUT trap is handled there).
 
 ## Recipes
 
@@ -63,13 +61,13 @@ Observed live (2026-07-17). Tenant-observed, not contract.
 | `filter=name=="X"` quoted, **via the CLI** | HTTP 400 — raw quotes die in transport | Via `wxcc_list` either quote style works; plain values need no quotes |
 | Filter values with spaces | Bare space is an RSQL syntax error | Quote the value: `filter="name=='Some Profile'"` (the tool encodes; pass raw characters) |
 | Filterable fields | Only `name` confirmed | Others are candidates |
-| Expecting writes | The tools refuse — writes are unproven for this entity | Read-only; do not route to the CLI to force one |
 
 ## Provenance and maintenance
 
 Read paths verified live on a us1 sandbox 2026-07-17: list `v2/multimedia-profile`, item
 `multimedia-profile/{id}` (the item path **drops v2** — `v2/.../{id}` 404s, same convention
 as teams/sites/users), `filter=name==` confirmed. Path shape and the v2 rule are pinned in
-the tool's entity registry (`mcp_server.py`); you do not pass paths by hand. Writes deliberately
-unprobed — a multimedia profile is referenced by sites, so a bad write would hit every agent
-at those sites.
+the tool's entity registry (`mcp_server.py`); you do not pass paths by hand. Writes were
+verified the same day and live in **wxcc-multimedia-profiles-write** — a multimedia profile
+is referenced by sites, so a bad write hits every agent at those sites; the write skill
+carries the confirm-first discipline and the `workItem` trap.

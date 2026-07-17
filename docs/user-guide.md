@@ -343,9 +343,9 @@ resolves to in your shell — **not** the MCP server you were just talking to.
 Entities: `user`, `team`, `site`, `contact-service-queue`, `entry-point`, `dial-number`,
 `skill`, `skill-profile`, `auxiliary-code`, `address-book`, `outdial-ani`, `agent-profile`
 (**Desktop Profile** — the old path name is backwards compatibility only), `desktop-layout`,
-`multimedia-profile` (read-only).
+`multimedia-profile`.
 
-20 skills route to these — one per domain, split read/write where the risk differs.
+21 skills route to these — one per domain, split read/write where the risk differs.
 
 ## Known limits (honest list)
 
