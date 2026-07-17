@@ -22,6 +22,8 @@ You'll also pick **one thing yourself**: a short name for this connection, with 
 
 You also need to be a **Contact Center administrator** for your organization's Webex tenant. If you're not sure whether you are, ask whoever gave you the three items above — this setup uses *your own* sign-in, so it only works if your account already has that access.
 
+**Claude Code itself requires a paid plan** — a Claude Pro or Max subscription, or an Anthropic Console account with billing set up. A free claude.ai chat account is not enough on its own. If you don't already have Claude Code, check with whoever shared this document — they may have sent a referral link that includes a free trial period.
+
 ---
 
 ### 1. Confirm Claude Code is installed
@@ -32,7 +34,7 @@ Open a terminal and run:
 claude --version
 ```
 
-If that prints a version number, skip to Step 2. If it says the command isn't found, install Claude Code first — see [code.claude.com](https://code.claude.com) for instructions — then come back here.
+If that prints a version number, skip to Step 2. If it says the command isn't found, install Claude Code first — see [code.claude.com](https://code.claude.com) for instructions — then come back here. (You'll need a paid plan or trial to sign in — see the note above if you don't have one yet.)
 
 ### 2. Connect — one command
 
