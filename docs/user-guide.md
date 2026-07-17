@@ -334,7 +334,7 @@ resolves to in your shell — **not** the MCP server you were just talking to.
 | Tool | Covers |
 |---|---|
 | `wxcc_whoami` | Which tenant am I actually on? Scopes, org, live read check |
-| `wxcc_list` / `wxcc_get` | Read any of 13 entities |
+| `wxcc_list` / `wxcc_get` | Read any of 14 entities |
 | `wxcc_create` / `wxcc_update` / `wxcc_delete` | Write, with dry-run + verify + reference-blocking |
 | `wxcc_list_entries` / `wxcc_add_entry` / `wxcc_update_entry` / `wxcc_remove_entry` | One entry at a time inside an address-book or outdial-ani |
 | `wxcc_search_tasks` | Calls/tasks/agent sessions (GraphQL) |
@@ -342,9 +342,10 @@ resolves to in your shell — **not** the MCP server you were just talking to.
 
 Entities: `user`, `team`, `site`, `contact-service-queue`, `entry-point`, `dial-number`,
 `skill`, `skill-profile`, `auxiliary-code`, `address-book`, `outdial-ani`, `agent-profile`
-(**Desktop Profile** — the old path name is backwards compatibility only), `desktop-layout`.
+(**Desktop Profile** — the old path name is backwards compatibility only), `desktop-layout`,
+`multimedia-profile` (read-only).
 
-19 skills route to these — one per domain, split read/write where the risk differs.
+20 skills route to these — one per domain, split read/write where the risk differs.
 
 ## Known limits (honest list)
 

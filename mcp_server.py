@@ -180,6 +180,14 @@ ENTITIES: dict[str, dict[str, Any]] = {
                 "validated at POST - a malformed layout fails at agent-desktop load. "
                 "Never modify the systemDefault Global Layout.",
     },
+    "multimedia-profile": {
+        "list": "v2/multimedia-profile", "item": "multimedia-profile/{id}",
+        "note": "Read-only here - writes are unprobed, so create/update/delete refuse. "
+                "This is what a site's `multimediaProfileId` points at; resolve the id "
+                "here. The per-channel integers (telephony/chat/email/social/...) are "
+                "concurrent-contact caps, not booleans. `systemDefault: true` marks the "
+                "tenant default. Item path drops v2 (v2/.../{id} 404s), like team/site/user.",
+    },
 }
 
 

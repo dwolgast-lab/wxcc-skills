@@ -21,7 +21,8 @@ A site is the physical/logical location teams and users hang off (`team.siteId`,
 **Do NOT use when:**
 - Auth errors, or `wxcc_whoami` reports the wrong org → **wxcc-connect**.
 - Working with the teams at a site → **wxcc-teams** (filter by `siteId`).
-- The multimedia profile itself → not covered by any skill yet (read-only referenced id).
+- Resolving or inspecting the multimedia profile itself (its name, channel caps) →
+  **wxcc-multimedia-profiles** (read-only).
 
 ## Reads
 
@@ -48,8 +49,8 @@ wxcc_delete(entity="site", id="SITE-ID")
 ```
 
 **All three create fields are required** — a 400 names the missing ones (reproduced live).
-`multimediaProfileId` is not derivable: copy it from an existing site
-(`wxcc_get` any sibling).
+`multimediaProfileId` is not derivable: copy it from an existing site (`wxcc_get` any
+sibling), or look it up by name via **wxcc-multimedia-profiles**.
 
 **Deleting a site that teams or users still reference is blocked** by the pre-flight, with
 each blocker named (`incoming-references` reports `team` and `user` types on a live site).
@@ -62,7 +63,7 @@ delete is **not reversible** — recreate yields a new id.
 | Item | Detail |
 |---|---|
 | Create with name only | 400 naming `active` and `multimediaProfileId` — required, not defaulted |
-| `multimediaProfileId` | Copy from a sibling site; there is no skill for the entity itself |
+| `multimediaProfileId` | Copy from a sibling site, or resolve it by name via **wxcc-multimedia-profiles** |
 | Deleting a referenced site | Blocked with the list of teams/users; repointing users is a candidate |
 | Filter values | Unquoted (`filter=name==X`); quotes → 400. Spaces untested. |
 

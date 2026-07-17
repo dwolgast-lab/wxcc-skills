@@ -5,6 +5,15 @@ Notable changes to the wxcc-skills library. Format loosely follows
 
 ## Unreleased
 
+- **`multimedia-profile` is now a first-class read-only entity** (14th in the registry),
+  closing the gap `wxcc-sites` had been flagging: a site's `multimediaProfileId` can now be
+  resolved to a name and its channel caps instead of being an opaque id. New
+  `wxcc-multimedia-profiles` skill; `wxcc-sites` now routes there. Writes are deliberately
+  unproven, so `wxcc_create`/`update`/`delete` refuse it (a profile is referenced by sites —
+  a bad write would hit every agent there). Read paths verified live: list
+  `v2/multimedia-profile`, item `multimedia-profile/{id}` (drops v2 — `v2/.../{id}` 404s),
+  `filter=name==` works. The per-channel integers (telephony/chat/email/...) are
+  concurrent-contact caps, not booleans — documented as a trap.
 - **New teammate one-pager**: [`docs/cloud-mcp-onboarding.md`](docs/cloud-mcp-onboarding.md)
   (+ auto-built PDF) — explicit, no-assumed-knowledge steps for connecting Claude Code to a
   cloud `wxcc-mcp` tenant, written for someone new to both Claude Code and this project.
