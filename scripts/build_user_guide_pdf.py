@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Regenerate docs/wxcc-skills-user-guide.pdf from docs/user-guide.md.
+"""Regenerate a docs/*.md guide's PDF (markdown -> styled HTML -> headless
+Chrome/Edge --print-to-pdf).
 
-Pipeline: markdown -> styled HTML -> headless Chrome/Edge --print-to-pdf.
 Requires: `pip install markdown` and Chrome or Edge installed.
-Run from anywhere:  python scripts/build_user_guide_pdf.py [--out PATH]
-Called automatically by hooks/pre-commit when docs/user-guide.md is staged.
+Run from anywhere:  python scripts/build_user_guide_pdf.py [--src PATH] [--out PATH]
+With no args, builds docs/user-guide.md -> docs/wxcc-skills-user-guide.pdf (the
+original pair). Any other --src defaults --out to the same path with a .pdf
+extension. Called automatically by hooks/pre-commit for each doc it lists.
 """
 from __future__ import annotations
 
@@ -17,7 +19,7 @@ from pathlib import Path
 import markdown
 
 REPO = Path(__file__).resolve().parent.parent
-SRC = REPO / "docs" / "user-guide.md"
+DEFAULT_SRC = REPO / "docs" / "user-guide.md"
 DEFAULT_OUT = REPO / "docs" / "wxcc-skills-user-guide.pdf"
 
 BROWSERS = [
@@ -46,7 +48,8 @@ p { margin: 0.5em 0; }
 code { font-family: Consolas, 'Courier New', monospace; font-size: 9pt;
        background: #f0f4f7; color: #0b3a52; padding: 1px 5px; border-radius: 3px; }
 pre { background: #f5f8fa; border-left: 3px solid #049fd9; border-radius: 4px;
-      padding: 10px 12px; overflow-x: auto; page-break-inside: avoid; }
+      padding: 10px 12px; overflow-x: auto; page-break-inside: avoid;
+      white-space: pre-wrap; word-break: break-all; }
 pre code { background: none; padding: 0; display: block; }
 table { border-collapse: collapse; width: 100%; margin: 0.9em 0;
         page-break-inside: avoid; }
@@ -76,11 +79,18 @@ def find_browser() -> str:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--out", type=Path, default=DEFAULT_OUT)
+    ap.add_argument("--src", type=Path, default=DEFAULT_SRC)
+    ap.add_argument("--out", type=Path, default=None)
     args = ap.parse_args()
+    # Resolve to absolute before deriving --out or handing a path to the browser
+    # subprocess: headless Chrome's --print-to-pdf does not honor this process's
+    # cwd for a relative path, so a relative --out silently fails to write.
+    args.src = args.src.resolve()
+    args.out = (args.out.resolve() if args.out else None) or \
+        (DEFAULT_OUT if args.src == DEFAULT_SRC else args.src.with_suffix(".pdf"))
 
     body = markdown.markdown(
-        SRC.read_text(encoding="utf-8"),
+        args.src.read_text(encoding="utf-8"),
         extensions=["tables", "fenced_code"],
     )
     html = f"<!doctype html><meta charset='utf-8'><style>{CSS}</style><body>{body}</body>"

@@ -5,6 +5,27 @@ Notable changes to the wxcc-skills library. Format loosely follows
 
 ## Unreleased
 
+- **New teammate one-pager**: [`docs/cloud-mcp-onboarding.md`](docs/cloud-mcp-onboarding.md)
+  (+ auto-built PDF) — explicit, no-assumed-knowledge steps for connecting Claude Code to a
+  cloud `wxcc-mcp` tenant, written for someone new to both Claude Code and this project.
+  Covers what to get from the tenant admin, the `add-json` + `--no-browser` sign-in flow
+  including the expected "connection refused" redirect, and a table of example prompts with
+  their expected (non-tenant-specific) outcomes.
+- **PDF auto-build generalized to any doc**, not duplicated: `scripts/build_user_guide_pdf.py`
+  takes `--src` (defaults to the original `user-guide.md`/`wxcc-skills-user-guide.pdf` pair
+  for back-compat) and derives `--out` from the source's stem otherwise.
+  `hooks/pre-commit` loops a small table of (markdown, pdf) pairs instead of checking one
+  hardcoded filename, so a third doc is a one-line addition.
+- Two real bugs found and fixed while building the second doc: a relative `--src` produced a
+  relative derived `--out`, which headless Chrome's `--print-to-pdf` silently failed to write
+  (it doesn't resolve relative paths against this process's cwd) — now resolved to absolute
+  before use. And long unbroken command lines were **clipped** in the printed PDF, not just
+  scrollable — `overflow-x: auto` has no effect once Chrome prints to PDF — fixed with
+  `white-space: pre-wrap; word-break: break-all` so they wrap instead of disappearing.
+  Re-verified the original user-guide PDF still renders correctly after the shared CSS change.
+- Noted, not fixed (pre-existing, out of scope here): the `gcloud run services update` block
+  in "Adding a customer tenant" renders as inline text instead of a code block in the PDF —
+  an indentation/fencing issue in the existing markdown source.
 - **`wxcc_list` now URL-encodes filter/search/attributes values**, which kills the
   raw-`+` silent-zero trap at the tool layer: `dialledNumber==+1719...` and a `+` in
   `search=` now match (verified live — the same search returned 0 of 2 records before the

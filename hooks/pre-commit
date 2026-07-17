@@ -1,12 +1,21 @@
 #!/bin/sh
-# Regenerate the user-guide PDF whenever docs/user-guide.md is part of the commit,
+# Regenerate a doc's PDF whenever its markdown source is part of the commit,
 # and include the fresh PDF in the same commit.
 # Activate once per clone:  git config core.hooksPath hooks
-if git diff --cached --name-only | grep -q '^docs/user-guide\.md$'; then
-    echo "pre-commit: docs/user-guide.md staged - regenerating PDF..."
-    python scripts/build_user_guide_pdf.py || {
-        echo "pre-commit: PDF build FAILED - commit aborted." >&2
-        exit 1
-    }
-    git add docs/wxcc-skills-user-guide.pdf
-fi
+#
+# Add a new (markdown, pdf) pair here when a new guide gets the same treatment.
+check_and_build() {
+    src="$1"
+    out="$2"
+    if git diff --cached --name-only | grep -q "^$src\$"; then
+        echo "pre-commit: $src staged - regenerating PDF..."
+        python scripts/build_user_guide_pdf.py --src "$src" || {
+            echo "pre-commit: PDF build FAILED for $src - commit aborted." >&2
+            exit 1
+        }
+        git add "$out"
+    fi
+}
+
+check_and_build "docs/user-guide.md" "docs/wxcc-skills-user-guide.pdf"
+check_and_build "docs/cloud-mcp-onboarding.md" "docs/cloud-mcp-onboarding.pdf"
