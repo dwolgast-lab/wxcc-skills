@@ -9,7 +9,7 @@ check_and_build() {
     out="$2"
     if git diff --cached --name-only | grep -q "^$src\$"; then
         echo "pre-commit: $src staged - regenerating PDF..."
-        python scripts/build_user_guide_pdf.py --src "$src" || {
+        python scripts/build_user_guide_pdf.py --src "$src" --out "$out" || {
             echo "pre-commit: PDF build FAILED for $src - commit aborted." >&2
             exit 1
         }
@@ -19,3 +19,4 @@ check_and_build() {
 
 check_and_build "docs/user-guide.md" "docs/wxcc-skills-user-guide.pdf"
 check_and_build "docs/cloud-mcp-onboarding.md" "docs/cloud-mcp-onboarding.pdf"
+check_and_build "docs/marketing-hype.md" "docs/wxcc-marketing-hype.pdf"

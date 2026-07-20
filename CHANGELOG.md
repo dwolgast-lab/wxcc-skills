@@ -3,6 +3,19 @@
 Notable changes to the wxcc-skills library. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); entries are dated, newest first.
 
+- **`docs/marketing-hype.md` rewritten as plain Markdown**, matching the style of
+  `user-guide.md`/`cloud-mcp-onboarding.md` instead of the hand-rolled HTML/CSS dashboard
+  layout it started as, so it now flows through the same shared CSS in
+  `build_user_guide_pdf.py` (cover band, styled tables, blockquote) rather than fighting it
+  with inline styles. Dropped `scripts/download_logo.py` and `docs/webex_logo.svg`: neither
+  was actually wired into the doc's real content (it had its own different inline SVG), and
+  the two sibling docs don't use a logo either. **Found and fixed a real bug in
+  `hooks/pre-commit`** while doing this: `check_and_build()` takes an explicit
+  `(src, out)` pair but never passed `out` to the build script, relying on the script's
+  default filename derivation to happen to match — true by coincidence for
+  `cloud-mcp-onboarding.md` (same stem), false for `marketing-hype.md` (wanted the branded
+  `wxcc-marketing-hype.pdf`, would have derived plain `marketing-hype.pdf`). The hook would
+  have `git add`ed a stale or missing file silently. Now passes `--out "$out"` explicitly.
 - **`multimedia-profile` now has verified full CRUD** (14th registry entity), closing the
   gap `wxcc-sites` had been flagging: a site's `multimediaProfileId` can be resolved to a
   name and channel caps, and profiles can be created/updated/deleted. New
