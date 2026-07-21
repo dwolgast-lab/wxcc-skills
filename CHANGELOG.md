@@ -3,6 +3,49 @@
 Notable changes to the wxcc-skills library. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); entries are dated, newest first.
 
+- **New `wxcc_references` tool, bulk for four more entities, and a type cleanup that turned
+  out to be a real crash class.** Verified live on the sandbox 2026-07-21; every probe object
+  created was deleted and re-read as 404, and the entity counts were swept back to baseline.
+  - **`wxcc_references`** exposes `GET {entity}/{id}/incoming-references` — the same scan
+    `wxcc_delete` already ran as a pre-flight — as a read-only tool, so "what breaks if I
+    touch this?" can be asked about an object you intend to **keep**. It reads the object
+    first on purpose: a bad id 404s the references endpoint, which would otherwise come back
+    as an empty list and read as "nothing points here" — the most dangerous wrong answer this
+    question has. Tools go to **16**.
+  - **Bulk now covers 15 of 17 entities.** `site`, `multimedia-profile`, `agent-profile` and
+    `desktop-layout` were blanks that turned out to be **unprobed, not unsupported** — all
+    four are `POST <entity>/bulk`, create + delete, **no update** (the same
+    `400 "New configuration cannot have an id"` as team/skill/skill-profile; `PATCH` is 405).
+    Only `user` (Control Hub owns it) and `address-book` are left.
+    - **`agent-profile` bulk create 403s on a clone**: `"User not Allowed to create system
+      default entity"`. Every stock Desktop Profile is `systemDefault`, so send
+      `systemDefault=false`.
+    - **`desktop-layout` returns a misleading 400** naming `"Teams assigned ... already
+      assigned to another desktop layout"` on a payload with **no teams key at all**. The
+      field is `teamIds` plus a `global` boolean, and a global layout implicitly claims every
+      team. Send `global=false` and `teamIds=[]`.
+  - **There is no read-only way to detect a bulk route** — worth recording, because it cost a
+    round of confidently wrong method. `GET team/bulk`, a route that demonstrably works, 404s
+    exactly like `GET not-a-thing/bulk`. The error-body shape (`trackingId` vs `timestamp`)
+    looked like a clean signal until the confound control `GET team/notabulkroute` returned
+    the `trackingId` shape too — it only proves the entity prefix is routed. Only a real POST
+    settles it.
+  - **Ruled out, so it is not re-litigated:** sub-resource entry tools for
+    `skill-profile.activeSkills` and `user-profile.permissions`. Both carry the same
+    kept-entry-needs-its-id 409 the entry tools exist to solve, but neither has a route —
+    with `outdial-ani/{id}/entry` (405) as a positive control and `.../notachild` (404) as a
+    negative, all six candidate paths 404. Read-modify-write via `wxcc_update` is the only
+    shape. **`work-type` is struck too**: deprecated and obsolete in WxCC, so
+    `auxiliary-code.workTypeId` stays a value you copy from an existing code.
+  - **Six Pyright errors fixed at the call sites instead of silenced at the annotation.**
+    `WxccClient.json()` correctly returns `tuple[int, object]`; re-annotating it `Any` would
+    have cleared five of them while hiding the exact crash class that already bit once — the
+    bare-string error body two entries below. Instead: an `_as_dict()` helper for bodies read
+    without an isinstance check, `_read` now **raises** on a non-dict 200 rather than handing
+    a caller junk to crash on later, and `_org_info` returns early on an unresolved org id
+    instead of requesting `organization/None` and 404ing into a generic message. `_read` was
+    re-checked against all 16 populated entities. `mcp_server.py` is at 0 errors; `wxcc.py`
+    still has 10, untouched and out of scope.
 - **Two new entities — `user-profile` and `resource-collection` — and bulk for five more.**
   Registry goes to **17 entities**, skills to **24**. All verified live on the sandbox
   2026-07-21 through the MCP tools, baselines restored (17/17 end-to-end checks green).

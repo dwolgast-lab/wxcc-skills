@@ -1,6 +1,6 @@
 ---
 name: wxcc-bulk
-description: Use when asked to create, update, or delete MANY Webex Contact Center objects of one type in a single operation - "bulk update these queues", "create 20 entry points from this list", "bulk-create these global variables", "delete all these teams", "change the service level on every X queue at once". Mutating - requires cjp:config_write and explicit confirmation. Verified for contact-service-queue, entry-point, auxiliary-code, dial-number, outdial-ani, cad-variable (global variables), team, skill, skill-profile, user-profile, and resource-collection - and which of create/update/delete each supports differs sharply. Other entities are refused until probed.
+description: Use when asked to create, update, or delete MANY Webex Contact Center objects of one type in a single operation - "bulk update these queues", "create 20 entry points from this list", "bulk-create these global variables", "delete all these teams", "change the service level on every X queue at once". Mutating - requires cjp:config_write and explicit confirmation. Verified for contact-service-queue, entry-point, auxiliary-code, dial-number, outdial-ani, cad-variable (global variables), team, skill, skill-profile, user-profile, resource-collection, site, multimedia-profile, agent-profile (Desktop Profile), and desktop-layout - and which of create/update/delete each supports differs sharply. Other entities are refused until probed.
 ---
 
 # wxcc-bulk — create / update / delete many objects in one call
@@ -55,6 +55,10 @@ an op an entity hasn't been proven to support. As of 2026-07-21:
 | `team` | ✅ | ❌ | ✅ | no bulk update, same 400 as outdial-ani |
 | `skill` | ✅ | ❌ | ✅ | no bulk update, same 400; `skill/v2/bulk` 404s — the route is `skill/bulk` |
 | `skill-profile` | ✅ | ❌ | ✅ | no bulk update, same 400; create needs at least one skill |
+| `site` | ✅ | ❌ | ✅ | no bulk update, same 400; `PATCH site/bulk` is 405 |
+| `multimedia-profile` | ✅ | ❌ | ✅ | no bulk update, same 400; strip `workItem` when cloning (see the entity note) |
+| `agent-profile` (Desktop Profile) | ✅ | ❌ | ✅ | no bulk update, same 400; a clone MUST set `systemDefault=false` or every item 403s — the stock profiles are all systemDefault |
+| `desktop-layout` | ✅ | ❌ | ✅ | no bulk update, same 400; MUST send `global=false` and `teamIds=[]` — cloning a global layout gives a misleading 400 naming "Teams assigned" on a payload with no teams key |
 | `resource-collection` | ❌ | ✅ RMW | ❌ | **update only, and on PATCH**; create → 500 "no mapping for id", delete → 400 "SAVE only" |
 
 ## wxcc_bulk_update — update many objects

@@ -15,7 +15,6 @@ Run locally:  claude mcp add --transport stdio wxcc -- python mcp_server.py
 """
 from __future__ import annotations
 
-import json
 import re
 import urllib.parse
 from typing import Any
@@ -77,6 +76,10 @@ ENTITIES: dict[str, dict[str, Any]] = {
         "list": "v2/site", "item": "site/{id}",
         "create": ["name", "active", "multimediaProfileId"],
         "writes": ["create", "update", "delete"],
+        "bulk": {
+            "create": {"method": "POST", "tail": "site/bulk"},
+            "delete": {"method": "POST", "tail": "site/bulk"},
+        },
         "note": "All three create fields are REQUIRED (a 400 names them). Copy "
                 "multimediaProfileId from an existing site. Deleting a site that "
                 "teams or users still reference is pre-flighted and blocked - repoint "
@@ -165,7 +168,9 @@ ENTITIES: dict[str, dict[str, Any]] = {
             "delete": {"method": "POST", "tail": "auxiliary-code/bulk"},
         },
         "note": "workTypeId is not derivable - copy it from an existing code with "
-                "the same workTypeCode (WRAP_UP_CODE or IDLE_CODE).",
+                "the same workTypeCode (WRAP_UP_CODE or IDLE_CODE). The `work-type` "
+                "entity itself is DEPRECATED/obsolete in WxCC - do NOT register it "
+                "here just because this id references it.",
     },
     "address-book": {
         "list": "v2/address-book", "item": "address-book/{id}",
@@ -200,6 +205,10 @@ ENTITIES: dict[str, dict[str, Any]] = {
         "create": ["name"],
         "writes": ["create", "update", "delete"],
         "clone_safe": False,
+        "bulk": {
+            "create": {"method": "POST", "tail": "agent-profile/bulk"},
+            "delete": {"method": "POST", "tail": "agent-profile/bulk"},
+        },
         "note": "This is a DESKTOP PROFILE. The `agent-profile` path is backwards "
                 "compatibility only - always say 'Desktop Profile' to the user. "
                 "CREATE BY CLONING an existing profile, but STRIP EVERY NESTED `id` "
@@ -213,23 +222,39 @@ ENTITIES: dict[str, dict[str, Any]] = {
                 "ALL, and flipping one without the other is likely the same shape. "
                 "dialPlanEnabled/dialPlans still appear but Dial Plan is DEPRECATED in "
                 "WxCC - ignore them. A profile is referenced by users, so a bad change "
-                "hits every agent on it at next login.",
+                "hits every agent on it at next login. BULK create refuses a "
+                "systemDefault clone with 403 'User not Allowed to create system default "
+                "entity' - the stock profiles are ALL systemDefault, so send "
+                "systemDefault=false (verified live 2026-07-21).",
     },
     "desktop-layout": {
         "list": "v2/desktop-layout", "item": "desktop-layout/{id}",
         "create": ["name", "jsonFileName", "jsonFileContent",
                    "defaultJsonModified", "status", "editedBy"],
         "writes": ["create", "update", "delete"],
+        "bulk": {
+            "create": {"method": "POST", "tail": "desktop-layout/bulk"},
+            "delete": {"method": "POST", "tail": "desktop-layout/bulk"},
+        },
         "note": "jsonFileContent is the ENTIRE layout JSON as an embedded string "
                 "(~20KB), and only appears on the item GET, not the list. It is NOT "
                 "validated at POST - a malformed layout fails at agent-desktop load. "
-                "Never modify the systemDefault Global Layout.",
+                "Never modify the systemDefault Global Layout. The team-scoping field "
+                "is `teamIds` plus a `global` boolean; cloning a global layout gives a "
+                "MISLEADING 400 naming 'Teams assigned ... already assigned to another "
+                "desktop layout' even though the payload has no teams key at all - a "
+                "global layout implicitly claims every team. Send global=false and "
+                "teamIds=[] (verified live 2026-07-21).",
     },
     "multimedia-profile": {
         "list": "v2/multimedia-profile", "item": "multimedia-profile/{id}",
         "create": ["name", "active", "telephony", "chat", "email", "social",
                    "blendingMode", "blendingModeEnabled", "manuallyAssignable"],
         "writes": ["create", "update", "delete"],
+        "bulk": {
+            "create": {"method": "POST", "tail": "multimedia-profile/bulk"},
+            "delete": {"method": "POST", "tail": "multimedia-profile/bulk"},
+        },
         "note": "This is what a site's `multimediaProfileId` points at. The per-channel "
                 "integers (telephony/chat/email/social/...) are concurrent-contact caps, "
                 "not booleans. blendingMode is BLENDED | BLENDED_REALTIME | EXCLUSIVE; "
@@ -401,24 +426,29 @@ def _org_info(client: wxcc.WxccClient) -> dict:
     who it is cannot lie. `subscriptionType` distinguishes a paying customer's
     org from a trial/sandbox without anyone having to declare it.
     """
-    if client.org_id in _org_cache:
-        return _org_cache[client.org_id]
+    org_id = client.org_id
+    if not org_id:
+        # Without an org id there is nothing to ask and nothing to cache: the
+        # request would go to `organization/None` and 404. Say so instead.
+        return {"name": "(org id unresolved)", "org_id": None, "production": None}
+    if org_id in _org_cache:
+        return _org_cache[org_id]
     try:
-        status, body = client.json("GET", f"organization/{client.org_id}")
+        status, body = client.json("GET", f"organization/{org_id}")
     except Exception:
         status, body = 0, None
     if status != 200 or not isinstance(body, dict):
-        return {"name": "(org name unavailable)", "org_id": client.org_id,
+        return {"name": "(org name unavailable)", "org_id": org_id,
                 "production": None}
     info = {
         "name": body.get("name"),
-        "org_id": client.org_id,
+        "org_id": org_id,
         "subscription": body.get("subscriptionType"),
         "environment": body.get("environment"),
         # A paying subscription is a real customer tenant. Trials are sandboxes.
         "production": body.get("subscriptionType") == "SUBSCRIPTION",
     }
-    _org_cache[client.org_id] = info
+    _org_cache[org_id] = info
     return info
 
 
@@ -468,10 +498,25 @@ def _strip_nested_ids(obj: Any) -> Any:
     return obj
 
 
+def _as_dict(body: object) -> dict:
+    """A parsed response body as a dict, or {} if it is any other shape.
+
+    `client.json` returns whatever parsed - dict, list, bare string, or None - so
+    a naive `.get()` on it is an AttributeError waiting for the right response.
+    That is not hypothetical: a 4xx carrying `error` as a bare string already
+    crashed one call chain (see _api_reason). Use this wherever a body is read
+    for a field WITHOUT an isinstance check first.
+    """
+    return body if isinstance(body, dict) else {}
+
+
 def _read(client: wxcc.WxccClient, entity: str, item_id: str) -> dict:
     status, body = client.json("GET", _path(entity, item_id))
     if status >= 400:
         raise ValueError(f"cannot read {entity}/{item_id}: HTTP {status} {body}")
+    if not isinstance(body, dict):
+        raise ValueError(f"cannot read {entity}/{item_id}: expected a JSON object, "
+                         f"got {type(body).__name__}: {str(body)[:120]}")
     return body
 
 
@@ -632,8 +677,9 @@ def wxcc_list(entity: str, filter: str = "", search: str = "",
     status, body = client.json("GET", path)
     if status >= 400:
         return {"error": f"HTTP {status}", "body": body}
-    return {"tenant": _tenant(client), "entity": entity, "meta": body.get("meta"),
-            "data": body.get("data"), "note": spec.get("note")}
+    doc = _as_dict(body)
+    return {"tenant": _tenant(client), "entity": entity, "meta": doc.get("meta"),
+            "data": doc.get("data"), "note": spec.get("note")}
 
 
 @mcp.tool()
@@ -644,6 +690,39 @@ def wxcc_get(entity: str, id: str) -> dict:
     obj = _read(client, entity, id)
     return {"tenant": _tenant(client), "entity": entity, "data": obj,
             "note": spec.get("note")}
+
+
+@mcp.tool()
+def wxcc_references(entity: str, id: str) -> dict:
+    """What points AT this object? Answers "what breaks if I change or delete it".
+
+    The same scan wxcc_delete runs as its pre-flight, exposed on its own so the
+    question can be asked about an object you intend to KEEP - no write attempted.
+
+    The object itself is read first on purpose: a bad id makes the references
+    endpoint 404, which would otherwise return an empty list and read as "nothing
+    points here" - the most dangerous wrong answer this tool could give.
+    """
+    client = _client()
+    obj = _read(client, entity, id)      # raises on a bad id, so empty means empty
+    hits = _find_references(client, entity, id)
+
+    groups: dict[str, list[dict]] = {}
+    for h in hits:
+        if h.get("scan_failed"):
+            continue
+        groups.setdefault(h["entity"], []).append({"id": h["id"], "name": h["name"]})
+
+    return {
+        "tenant": _tenant(client),
+        "entity": entity, "id": id, "name": obj.get("name"),
+        "referenced_by": groups,
+        "total": sum(len(v) for v in groups.values()),
+        "scan_failed": [h for h in hits if h.get("scan_failed")] or None,
+        "note": "Empty referenced_by means nothing points here and a delete would "
+                "not be reference-blocked. A non-empty scan_failed means the scan "
+                "is INCOMPLETE - do not read it as clean.",
+    }
 
 
 # --------------------------------------------------------------------------- #
@@ -687,7 +766,7 @@ def wxcc_create(entity: str, fields: dict, confirm: bool = False) -> dict:
     status, body = client.json("POST", _path(entity, write=True), fields)
     if status >= 400:
         return {"created": False, "http": status, "error": body}
-    new_id = (body or {}).get("id")
+    new_id = _as_dict(body).get("id")
     verified = _read(client, entity, new_id) if new_id else None
     return {"TENANT": _tenant(client), "created": True, "http": status, "id": new_id,
             "verified_by_reread": verified,
@@ -914,7 +993,7 @@ def wxcc_add_entry(entity: str, parent_id: str, fields: dict,
     status, body = client.json("POST", _child_path(entity, parent_id), fields)
     if status >= 400:
         return {"added": False, "http": status, "error": body}
-    new_id = (body or {}).get("id")
+    new_id = _as_dict(body).get("id")
     entries = _parent_entries(client, entity, parent_id)
     return {"TENANT": _tenant(client), "added": True, "http": status, "id": new_id,
             "verified_in_parent": any(e.get("id") == new_id for e in entries),
