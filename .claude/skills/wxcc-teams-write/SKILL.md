@@ -81,6 +81,12 @@ wxcc_delete(entity="team", id="TEAM-ID", confirm=true)
 **No rollback.** Recreating yields a new id; queue distribution groups and anything else
 holding the old id stay broken. Confirm emphatically.
 
+## Bulk
+
+Many teams at once: `wxcc_bulk_create` / `wxcc_bulk_delete` — see **wxcc-bulk**. There is
+**no bulk update** for teams (an id-bearing SAVE item returns 400 "New configuration cannot
+have an id"); update one at a time with `wxcc_update`.
+
 ## Traps and notes
 
 | Item | Detail |

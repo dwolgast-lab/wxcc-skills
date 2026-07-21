@@ -3,13 +3,49 @@
 Notable changes to the wxcc-skills library. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); entries are dated, newest first.
 
+- **Two new entities — `user-profile` and `resource-collection` — and bulk for five more.**
+  Registry goes to **17 entities**, skills to **24**. All verified live on the sandbox
+  2026-07-21 through the MCP tools, baselines restored (17/17 end-to-end checks green).
+  - **`user-profile`** (admin access rights — *not* the Desktop Profile) is **the only entity
+    whose item path keeps its version prefix**. `v3/user-profile/{id}` and `user-profile/{id}`
+    BOTH answer with **different schemas**, and **v2 writes are decommissioned per-org**
+    (`400 "v2 user profile is decommissioned for this organization"`) while v2 reads still
+    succeed — so it looks like a permissions problem. Everything is pinned to v3. Two further
+    traps: the permission list's write key is **`permissions`**, not the
+    `userProfilePermissions` the API's own 400 names (sending that key is treated as absent,
+    so you get the same 400 forever); and cloning a profile without stripping sub-entity ids
+    returns `409 "Internal error"`. The list omits `permissions` — read the item.
+  - **`resource-collection`** (the scoped groupings a user profile points at) requires **all
+    20 resource types** in `resources` — a partial list is a helpful 400 naming the missing
+    ones, but **omitting the key entirely is a bare 500**. `site`, `channel`, `team` and
+    `queue` must not be `NONE`. The list omits `resources` — read the item.
+  - **Bulk now covers 11 entities**, and the shape of what's missing is the point: `team`,
+    `skill` and `skill-profile` have create + delete but **no bulk update** — all three
+    return the same `400 "New configuration cannot have an id"` as `outdial-ani`, which is
+    the signature of an op that does not exist rather than a body you can fix.
+    `user-profile` has all three (on `v3/user-profile/bulk`). `resource-collection` is
+    **update-only and on PATCH** — bulk create returns `500 "no mapping for id"`, bulk delete
+    a `400`, and despite being PATCH it is *not* partial: a partial item comes back as a
+    leaked Java NPE, so the tool read-modify-writes.
+  - **Fixed while testing:** `wxcc_bulk_create` / `wxcc_bulk_update` validated item shapes
+    *before* checking whether the entity supports that op at all, so asking
+    `resource-collection` for a bulk create reported "missing required fields" instead of
+    "bulk create is not supported". The op check now runs first. Caught by the new
+    end-to-end refusal checks, which is what they were for.
 - **Fixed: an error body with `error` as a string crashed the caller instead of reporting.**
   `_put_adaptive` (the read-modify-write retry behind `wxcc_update`) and the bulk per-item
   collator both walked `error`/`apiError` assuming a nested dict, so a 4xx whose `error` is a
   bare string raised `AttributeError: 'str' object has no attribute 'get'` — the API's own
   message was lost and the tool call died. Both now go through one `_api_reason()` helper that
-  accepts either shape and stringifies anything else rather than dropping it. Valid usage never
-  hit this; it surfaced from a malformed request during bulk testing.
+  accepts either shape and stringifies anything else rather than dropping it. It surfaced from a
+  malformed request. The string-shaped body is **real, not hypothetical** — it is what the
+  platform's default handler returns for an unknown *route*
+  (`{"timestamp":…,"status":405,"error":"Method Not Allowed","path":…}`, reproduced on
+  `GET resource-collection` and `GET v2/resource-collections` while probing the new entities).
+  It is **not** reachable through `_put_adaptive` while every registry path is correct, since a
+  bad *object id* on a valid route returns the dict-shaped error instead (checked). It becomes
+  reachable the moment a registry path is wrong or a route is retired — which is precisely what
+  happened to v2 user-profile writes, so the guard is worth having.
 - **Bulk writes: `wxcc_bulk_update` / `wxcc_bulk_create` / `wxcc_bulk_delete`** — act on many
   objects of one entity in a single call, plus a `wxcc-bulk` skill. **Verified live on the
   sandbox for six entities**, each op exercised end-to-end through the tools with baselines

@@ -65,6 +65,13 @@ ENTITIES: dict[str, dict[str, Any]] = {
         "list": "v2/team", "item": "team/{id}",
         "create": ["name", "active", "siteId", "teamStatus", "teamType"],
         "writes": ["create", "update", "delete"],
+        "bulk": {
+            "create": {"method": "POST", "tail": "team/bulk"},
+            "delete": {"method": "POST", "tail": "team/bulk"},
+        },
+        "note": "Bulk has NO update: an id-bearing SAVE item returns 400 \"New "
+                "configuration cannot have an id\" (same as outdial-ani). Use "
+                "wxcc_update per team.",
     },
     "site": {
         "list": "v2/site", "item": "site/{id}",
@@ -122,19 +129,31 @@ ENTITIES: dict[str, dict[str, Any]] = {
         "list": "v2/skill", "item": "skill/{id}",
         "create": ["name", "active", "skillType", "serviceLevelThreshold"],
         "writes": ["create", "update", "delete"],
+        "bulk": {
+            "create": {"method": "POST", "tail": "skill/bulk"},
+            "delete": {"method": "POST", "tail": "skill/bulk"},
+        },
         "note": "skillType ENUM additionally requires enumSkillValues:[{name}]. "
                 "Deleting a skill still referenced by a profile returns 412 with "
-                "referencedEntities - delete the profiles first.",
+                "referencedEntities - delete the profiles first. Bulk has NO "
+                "update (400 \"New configuration cannot have an id\"); `skill/v2/bulk` "
+                "404s - the route is `skill/bulk`.",
     },
     "skill-profile": {
         "list": "v2/skill-profile", "item": "skill-profile/{id}",
         "create": ["name"],
         "writes": ["create", "update", "delete"],
+        "bulk": {
+            "create": {"method": "POST", "tail": "skill-profile/bulk"},
+            "delete": {"method": "POST", "tail": "skill-profile/bulk"},
+        },
         "note": "activeSkills entries are {skillId, booleanValue|proficiencyValue|"
                 "textValue}. activeEnumSkills entries carry {enumSkillValueId} ONLY "
                 "- adding skillId there returns HTTP 500. On update, every KEPT "
                 "activeSkills entry must resend its own sub-entity `id` or you get "
-                "409 duplicate-entry.",
+                "409 duplicate-entry. At least one skill is mandatory on create "
+                "(400 \"Atleast one skill is mandatory.\"). Bulk has NO update "
+                "(400 \"New configuration cannot have an id\").",
     },
     "auxiliary-code": {
         "list": "v2/auxiliary-code", "item": "auxiliary-code/{id}",
@@ -240,6 +259,50 @@ ENTITIES: dict[str, dict[str, Any]] = {
                 "(named by a 400); additionally agentViewable=true requires desktopLabel. "
                 "Item/create paths drop v2. Bulk create/update/delete all POST "
                 "cad-variable/bulk (update is read-modify-write; no partial route).",
+    },
+    "user-profile": {
+        "list": "v3/user-profile", "item": "v3/user-profile/{id}",
+        "create": ["name", "profileType", "permissionAccessLevel",
+                   "resourceAccessLevel", "active"],
+        "writes": ["create", "update", "delete"],
+        "clone_safe": False,
+        "bulk": {
+            "create": {"method": "POST", "tail": "v3/user-profile/bulk"},
+            "update": {"method": "POST", "tail": "v3/user-profile/bulk", "partial": False},
+            "delete": {"method": "POST", "tail": "v3/user-profile/bulk"},
+        },
+        "note": "THE ONLY ENTITY WHOSE ITEM PATH KEEPS ITS VERSION PREFIX. v2 and v3 "
+                "are DIFFERENT SCHEMAS and both answer: `user-profile/{id}` returns the "
+                "OLD v2 shape (accessAll*/userProfileAppModules), `v3/user-profile/{id}` "
+                "the current one (permissionAccessLevel/resourceAccessLevel/permissions/"
+                "resourceCollections). v2 WRITES ARE DECOMMISSIONED per-org (400 'v2 user "
+                "profile is decommissioned for this organization'), so everything here is "
+                "v3. permissionAccessLevel must be SPECIFIC for ADMINISTRATOR_ONLY and "
+                "STANDARD_AGENT, which then REQUIRES the permission list - and that list's "
+                "key on write is `permissions` [{name, access}], NOT the "
+                "`userProfilePermissions` the API's own 400 names (sending that key is "
+                "silently treated as absent). Sub-entity ids must be stripped when cloning "
+                "(a full copy returns 409 'Internal error'). LIST OMITS `permissions` - "
+                "read the item. systemDefault=true objects cannot be modified.",
+    },
+    "resource-collection": {
+        "list": "v2/resource-collection", "item": "resource-collection/{id}",
+        "create": ["name", "resources"],
+        "writes": ["create", "update", "delete"],
+        "bulk": {
+            "update": {"method": "PATCH", "tail": "resource-collection/bulk",
+                       "partial": False},
+        },
+        "note": "Scoped-access grouping referenced by user-profile.resourceCollections. "
+                "`resources` must list ALL 20 resource types - a partial list is a 400 "
+                "naming the missing ones, and OMITTING the key entirely is a bare 500. "
+                "Each entry is {name, accessLevel: NONE|SPECIFIC|ALL, ids:[]}; site, "
+                "channel, team and queue must NOT be NONE. LIST OMITS `resources` - read "
+                "the item. Bulk is UPDATE-ONLY and on PATCH: bulk create returns 500 'no "
+                "mapping for id' and requestAction DELETE is rejected outright (400, "
+                "'should be empty or specified as SAVE for PATCH'). Despite being a PATCH "
+                "route it is NOT partial - an item without the full `resources` array "
+                "500s on a leaked Java NPE, so the tool read-modify-writes.",
     },
 }
 
@@ -1026,13 +1089,14 @@ def wxcc_bulk_update(entity: str, items: list, confirm: bool = False) -> dict:
     returns a per-item 207 and this tool reports which items applied (with the operation)
     and which failed (with the API's own per-item reason).
     """
-    _bulk_spec(entity)
+    # Resolve the op FIRST: an entity that has no bulk update at all must say so,
+    # not report a problem with items it was never going to send.
+    op = _bulk_ep(entity, "update")
     bad = [i for i, it in enumerate(items)
            if not isinstance(it, dict) or not it.get("id")]
     if bad:
         return {"error": "every bulk-update item needs an 'id' plus the fields to "
                          "change", "offending_indexes": bad}
-    op = _bulk_ep(entity, "update")
     client = _client()
     if not confirm:
         return {"TENANT": _tenant(client), "dry_run": True,
@@ -1081,6 +1145,9 @@ def wxcc_bulk_create(entity: str, items: list, confirm: bool = False) -> dict:
     confirm=False (default) previews and writes nothing.
     """
     spec = _bulk_spec(entity)
+    # Resolve the op FIRST: an entity that has no bulk create at all must say so,
+    # not complain about the fields of items it was never going to send.
+    op = _bulk_ep(entity, "create")
     withid = [i for i, it in enumerate(items) if isinstance(it, dict) and it.get("id")]
     if withid:
         return {"error": "bulk-create items must not carry an 'id' (that is an update)",
@@ -1096,7 +1163,6 @@ def wxcc_bulk_create(entity: str, items: list, confirm: bool = False) -> dict:
     labels = [(i, {"name": it.get("name")}) for i, it in enumerate(items)]
     wrapped = [{"itemIdentifier": i, "item": it, "requestAction": "SAVE"}
                for i, it in enumerate(items)]
-    op = _bulk_ep(entity, "create")
     client = _client()
     if not confirm:
         return {"TENANT": _tenant(client), "dry_run": True,

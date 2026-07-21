@@ -91,6 +91,13 @@ The 500 case is worth knowing precisely: it returns no message, and a re-read sh
 profile **unchanged** — a clean failure, not a partial write. But do not rely on that;
 re-read and check.
 
+## Bulk
+
+Many skills or profiles at once: `wxcc_bulk_create` / `wxcc_bulk_delete` — see
+**wxcc-bulk**. Neither `skill` nor `skill-profile` has a **bulk update** (400 "New
+configuration cannot have an id"); update one at a time. Note `skill/v2/bulk` 404s — the
+route is `skill/bulk`, which the tool already knows.
+
 ## Traps
 
 | Item | Detail |
