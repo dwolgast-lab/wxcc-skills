@@ -334,8 +334,9 @@ resolves to in your shell — **not** the MCP server you were just talking to.
 | Tool | Covers |
 |---|---|
 | `wxcc_whoami` | Which tenant am I actually on? Scopes, org, live read check |
-| `wxcc_list` / `wxcc_get` | Read any of 14 entities |
-| `wxcc_create` / `wxcc_update` / `wxcc_delete` | Write, with dry-run + verify + reference-blocking |
+| `wxcc_list` / `wxcc_get` | Read any of 15 entities |
+| `wxcc_create` / `wxcc_update` / `wxcc_delete` | Write one object, with dry-run + verify + reference-blocking |
+| `wxcc_bulk_update` / `wxcc_bulk_create` / `wxcc_bulk_delete` | Write **many** objects of one entity in a single call, per-item 207 results (queues, entry points, aux codes, dial numbers, outdial ANIs, global variables — which ops each supports differs) |
 | `wxcc_list_entries` / `wxcc_add_entry` / `wxcc_update_entry` / `wxcc_remove_entry` | One entry at a time inside an address-book or outdial-ani |
 | `wxcc_search_tasks` | Calls/tasks/agent sessions (GraphQL) |
 | `wxcc_webhooks` | Event types + subscription CRUD |
@@ -343,9 +344,10 @@ resolves to in your shell — **not** the MCP server you were just talking to.
 Entities: `user`, `team`, `site`, `contact-service-queue`, `entry-point`, `dial-number`,
 `skill`, `skill-profile`, `auxiliary-code`, `address-book`, `outdial-ani`, `agent-profile`
 (**Desktop Profile** — the old path name is backwards compatibility only), `desktop-layout`,
-`multimedia-profile`.
+`multimedia-profile`, `cad-variable` (**Global Variables**).
 
-21 skills route to these — one per domain, split read/write where the risk differs.
+22 skills route to these — one per domain, split read/write where the risk differs, plus
+`wxcc-bulk` for many-at-once writes.
 
 ## Known limits (honest list)
 

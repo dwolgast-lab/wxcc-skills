@@ -82,6 +82,11 @@ ENTITIES: dict[str, dict[str, Any]] = {
                    "monitoringPermitted", "parkingPermitted", "recordingPermitted",
                    "recordingAllCallsPermitted", "pauseRecordingPermitted"],
         "writes": ["create", "update", "delete"],
+        "bulk": {
+            "create": {"method": "POST", "tail": "contact-service-queue/v2/bulk"},
+            "update": {"method": "PATCH", "tail": "contact-service-queue/bulk", "partial": True},
+            "delete": {"method": "POST", "tail": "contact-service-queue/v2/bulk"},
+        },
         "note": "The queue entity is `contact-service-queue`; `/queue` 404s. The "
                 "five *Permitted booleans are REQUIRED on create, not defaulted.",
     },
@@ -90,17 +95,28 @@ ENTITIES: dict[str, dict[str, Any]] = {
         "create": ["name", "entryPointType", "channelType", "serviceLevelThreshold",
                    "active", "maximumActiveContacts"],
         "writes": ["create", "update", "delete"],
+        "bulk": {
+            "create": {"method": "POST", "tail": "entry-point/bulk"},
+            "update": {"method": "POST", "tail": "entry-point/bulk", "partial": False},
+            "delete": {"method": "POST", "tail": "entry-point/bulk"},
+        },
     },
     "dial-number": {
         "list": "v2/dial-number", "item": "dial-number/{id}",
         "create": ["dialledNumber", "entryPointId", "location", "regionId"],
         "writes": ["create", "update"],
+        "bulk": {
+            "create": {"method": "POST", "tail": "dial-number/bulk"},
+            "update": {"method": "POST", "tail": "dial-number/bulk", "partial": False},
+        },
         "note": "Field is `dialledNumber` (double L). Numbers CANNOT be invented: "
                 "create 404s with 'Dialed number does not exist' unless the number "
                 "is already in the Webex Calling location inventory. Filter/search "
                 "with a raw '+' works here (the tool URL-encodes values); only the "
                 "CLI path still needs dialledNumberDigits==. DELETE is unprobed "
-                "and would unmap a live number.",
+                "and would unmap a live number - so bulk delete is deliberately NOT "
+                "exposed either (bulk is POST dial-number/bulk, create+update only; "
+                "bulk update is read-modify-write, verified live via a no-op).",
     },
     "skill": {
         "list": "v2/skill", "item": "skill/{id}",
@@ -124,6 +140,11 @@ ENTITIES: dict[str, dict[str, Any]] = {
         "list": "v2/auxiliary-code", "item": "auxiliary-code/{id}",
         "create": ["active", "name", "workTypeCode", "defaultCode", "workTypeId"],
         "writes": ["create", "update", "delete"],
+        "bulk": {
+            "create": {"method": "POST", "tail": "auxiliary-code/bulk"},
+            "update": {"method": "PATCH", "tail": "auxiliary-code/bulk", "partial": True},
+            "delete": {"method": "POST", "tail": "auxiliary-code/bulk"},
+        },
         "note": "workTypeId is not derivable - copy it from an existing code with "
                 "the same workTypeCode (WRAP_UP_CODE or IDLE_CODE).",
     },
@@ -142,6 +163,10 @@ ENTITIES: dict[str, dict[str, Any]] = {
         "list": "v2/outdial-ani", "item": "outdial-ani/{id}",
         "create": ["name", "outdialANIEntries"],
         "writes": ["create", "update", "delete"],
+        "bulk": {
+            "create": {"method": "POST", "tail": "outdial-ani/bulk"},
+            "delete": {"method": "POST", "tail": "outdial-ani/bulk"},
+        },
         "child": "entry",
         "child_create": ["name", "number"],
         "note": "To add/change/remove ONE number use the wxcc_*_entry tools "
@@ -197,6 +222,24 @@ ENTITIES: dict[str, dict[str, Any]] = {
                 "retries, so a read-modify-write update still works; the stripped field "
                 "is reported. Delete is reference-blocked by sites (pre-flight). "
                 "Item/create paths drop v2 (v2/.../{id} 404s), like team/site/user.",
+    },
+    "cad-variable": {
+        "list": "v2/cad-variable", "item": "cad-variable/{id}",
+        "create": ["name", "variableType", "defaultValue", "active",
+                   "agentEditable", "agentViewable", "reportable"],
+        "writes": ["create", "update", "delete"],
+        "bulk": {
+            "create": {"method": "POST", "tail": "cad-variable/bulk"},
+            "update": {"method": "POST", "tail": "cad-variable/bulk", "partial": False},
+            "delete": {"method": "POST", "tail": "cad-variable/bulk"},
+        },
+        "note": "This is the WxCC 'Global Variables' entity (the API name is "
+                "cad-variable). defaultValue MUST be valid for the variableType (a 400 "
+                "says validDefaultValueForVariabelType; the sample tenant used "
+                "variableType 'String'). The seven create fields above are each required "
+                "(named by a 400); additionally agentViewable=true requires desktopLabel. "
+                "Item/create paths drop v2. Bulk create/update/delete all POST "
+                "cad-variable/bulk (update is read-modify-write; no partial route).",
     },
 }
 
@@ -388,6 +431,21 @@ def _drop_key(obj: Any, key: str) -> Any:
     return obj
 
 
+def _api_reason(body: Any) -> str:
+    """The API's own failure reason, whatever shape the error body arrived in.
+
+    Usually {"error": {"reason": "..."}}, but a 4xx can carry `error` as a bare
+    string - which crashed a naive .get() chain. Anything unrecognized is
+    stringified rather than dropped, so the reason still reaches the caller.
+    """
+    if not isinstance(body, dict):
+        return str(body) if body else ""
+    err = body.get("error")
+    if isinstance(err, dict):
+        return str(err.get("reason") or "")
+    return str(err) if err else ""
+
+
 def _put_adaptive(client: wxcc.WxccClient, path: str, body: dict) -> tuple[int, Any, list[str]]:
     """PUT; if the API rejects a field ONLY because its feature flag is off, drop
     exactly that field (at any depth) and retry. Returns (status, body, stripped).
@@ -395,8 +453,7 @@ def _put_adaptive(client: wxcc.WxccClient, path: str, body: dict) -> tuple[int, 
     status, out = client.json("PUT", path, body)
     stripped: list[str] = []
     while status >= 400 and isinstance(out, dict):
-        reason = (out.get("error") or {}).get("reason") or ""
-        m = _FLAG_DENY.search(reason)
+        m = _FLAG_DENY.search(_api_reason(out))
         if not m or m.group(1) in stripped:
             break
         body = _drop_key(body, m.group(1))
@@ -869,6 +926,232 @@ def wxcc_remove_entry(entity: str, parent_id: str, entry_id: str,
             "verified_gone": not any(e.get("id") == entry_id for e in entries),
             "entries_now": [{k: e.get(k) for k in ("id", "name", "number")}
                             for e in entries]}
+
+
+# --------------------------------------------------------------------------- #
+# Bulk writes (verified live on the sandbox 2026-07-20/21)
+#
+# ONE nested envelope, but the routes AND which ops exist are PER-ENTITY and NOT
+# uniform, so each entity's `bulk` block lists only the ops proven for it:
+#   contact-service-queue : create/delete POST .../v2/bulk ; update PATCH .../bulk (partial)
+#   auxiliary-code        : create/delete POST .../bulk    ; update PATCH .../bulk (partial)
+#   entry-point           : create/update/delete all POST .../bulk (update = read-modify-write)
+#   cad-variable          : create/update/delete all POST .../bulk (update = read-modify-write)
+#   dial-number           : create + update POST .../bulk  (NO delete - would unmap a live number)
+#   outdial-ani           : create + delete POST .../bulk  (NO update - id-bearing item -> 400
+#                           "New configuration cannot have an id"; use wxcc_update / entry tools)
+# Body:  {"items": [{"itemIdentifier": <int>, "item": {...}, "requestAction": "SAVE"|"DELETE"}]}
+#   The array key is `items`, but each element wraps the object under `item` and
+#   carries a client-assigned `itemIdentifier` the response echoes back. Sending
+#   {"items":[{id,...}]} without the `item` wrapper is a 400 ("item ... null or blank").
+# Response: HTTP 207 ALWAYS; per item either {itemIdentifier, status, operationType,
+#   href} on success or {itemIdentifier, status, apiError:{error:{reason}}} on failure.
+# TRAPS, all reproduced live:
+#   - A DELETE item (and, where there is no partial route, an UPDATE item) needs the FULL
+#     object, not just {id}: an id-only delete returns a misleading 400 "Cannot
+#     Update/Delete system generated Entities". The tools fetch the object for you.
+#   - An empty response items[] means NOTHING matched - a 207 is NOT proof of a write.
+#   - The API self-guards references PER ITEM: a still-referenced delete -> 412 (across
+#     flows and dial-number mappings alike), and the rest of the batch still applies.
+#   - System-generated entities cannot be updated/deleted (per-item 400).
+#   - Routes are NOT uniform (some have /v2, some a PATCH partial route, some neither), so
+#     every entity is probed before it gets a `bulk` block whose per-op entry carries the
+#     method, the path tail, and (for update) whether it is a native partial patch.
+# --------------------------------------------------------------------------- #
+def _bulk_spec(entity: str) -> dict[str, Any]:
+    spec = _entity(entity)
+    if not spec.get("bulk"):
+        have = ", ".join(sorted(e for e, s in ENTITIES.items() if s.get("bulk")))
+        raise ValueError(f"bulk is not verified for {entity!r}. "
+                         f"Entities with bulk support: {have or '(none yet)'}.")
+    return spec
+
+
+def _bulk_ep(entity: str, op: str) -> dict[str, Any]:
+    """Resolve a bulk op ('create'|'update'|'delete') to its method and full path, or
+    raise if this entity does not support that op in bulk. `partial` (update only) is
+    True where the API has a native partial-patch route; where False, wxcc_bulk_update
+    read-modify-writes the full object."""
+    bulk = _bulk_spec(entity)["bulk"]
+    if op not in bulk:
+        raise ValueError(f"bulk {op} is not supported/verified for {entity!r} "
+                         f"(supported: {', '.join(sorted(bulk))}).")
+    e = bulk[op]
+    return {"method": e["method"], "partial": e.get("partial", False),
+            "path": f"organization/{{orgId}}/{e['tail']}"}
+
+
+def _bulk_collate(sent: list[tuple[int, dict]], body: Any) -> dict:
+    """Map the 207 items[] back to what we sent, by itemIdentifier.
+
+    An input with no matching result was NOT processed (the empty-items no-op) -
+    surfaced loudly rather than counted as success.
+    """
+    results = (body or {}).get("items") if isinstance(body, dict) else None
+    if not isinstance(results, list):
+        return {"unexpected_response": body}
+    by_id = {r.get("itemIdentifier"): r for r in results}
+    ok, failed, missing = [], [], []
+    for ident, label in sent:
+        r = by_id.get(ident)
+        if r is None:
+            missing.append(label)
+        elif isinstance(r.get("status"), int) and r["status"] < 300:
+            ok.append({**label, "operation": r.get("operationType"),
+                       "id": (r.get("href") or "").rsplit("/", 1)[-1] or label.get("id")})
+        else:
+            failed.append({**label, "status": r.get("status"),
+                           "reason": _api_reason(r.get("apiError"))})
+    out: dict[str, Any] = {"succeeded": ok or None, "failed": failed or None}
+    if missing:
+        out["NOT_PROCESSED"] = missing
+        out["warning"] = ("The API returned 207 but gave no result for these items, so "
+                          "they did NOT apply. A 207 is not proof - this is the "
+                          "empty-items no-op.")
+    return out
+
+
+@mcp.tool()
+def wxcc_bulk_update(entity: str, items: list, confirm: bool = False) -> dict:
+    """Update MANY objects of one entity in a single call.
+
+    Each item is {"id": "...", "<field>": <newvalue>, ...} - the id plus the fields to
+    change. Where the entity has a native partial-patch endpoint (e.g. queues) only
+    those fields are sent; where it does not (e.g. entry-point) the tool read-modify-
+    writes, fetching each current object and merging your changes into a full-object
+    save. Either way you pass only what changes. Bulk is verified per-entity - an
+    unverified entity is refused with the list that is supported.
+
+    confirm=False (default) writes nothing and previews. On a confirmed call the API
+    returns a per-item 207 and this tool reports which items applied (with the operation)
+    and which failed (with the API's own per-item reason).
+    """
+    _bulk_spec(entity)
+    bad = [i for i, it in enumerate(items)
+           if not isinstance(it, dict) or not it.get("id")]
+    if bad:
+        return {"error": "every bulk-update item needs an 'id' plus the fields to "
+                         "change", "offending_indexes": bad}
+    op = _bulk_ep(entity, "update")
+    client = _client()
+    if not confirm:
+        return {"TENANT": _tenant(client), "dry_run": True,
+                "action": f"{op['method']} {op['path']}", "count": len(items),
+                "would_change": items,
+                "update_style": ("partial patch (only your fields are sent)"
+                                 if op["partial"] else
+                                 "read-modify-write (no partial endpoint; each object is "
+                                 "fetched and your fields merged into a full-object save)"),
+                "rollback": "re-run wxcc_bulk_update with the prior field values "
+                            "(read them first if you need them)",
+                "next": "re-call with confirm=True once the user approves"}
+    # Where there is no partial route, merge each change set onto the current object.
+    not_found: list = []
+    sent: list = []          # (label, item_to_send)
+    if op["partial"]:
+        sent = [({"id": it["id"]}, it) for it in items]
+    else:
+        for it in items:
+            st, cur = client.json("GET", _path(entity, it["id"]))
+            if st == 404 or not isinstance(cur, dict):
+                not_found.append(it["id"])
+            else:
+                sent.append(({"id": it["id"]}, {**_strip(cur), **it}))
+    labels = [(i, lbl) for i, (lbl, _o) in enumerate(sent)]
+    wrapped = [{"itemIdentifier": i, "item": o, "requestAction": "SAVE"}
+               for i, (_lbl, o) in enumerate(sent)]
+    status, body = client.json(op["method"], op["path"], {"items": wrapped})
+    if status >= 400 and not (isinstance(body, dict) and body.get("items")):
+        return {"http": status, "error": body,
+                "hint": "whole-request failure (not per-item) - check the item shapes"}
+    out = {"TENANT": _tenant(client), "http": status, **_bulk_collate(labels, body)}
+    if not_found:
+        out["not_found"] = not_found
+    return out
+
+
+@mcp.tool()
+def wxcc_bulk_create(entity: str, items: list, confirm: bool = False) -> dict:
+    """Create MANY objects of one entity in a single call.
+
+    Each item is a FULL create body - the same required fields wxcc_create enforces,
+    checked here per item before the call. An item must NOT carry an 'id' (that is an
+    update - use wxcc_bulk_update).
+
+    confirm=False (default) previews and writes nothing.
+    """
+    spec = _bulk_spec(entity)
+    withid = [i for i, it in enumerate(items) if isinstance(it, dict) and it.get("id")]
+    if withid:
+        return {"error": "bulk-create items must not carry an 'id' (that is an update)",
+                "offending_indexes": withid}
+    req = spec.get("create", [])
+    miss = {i: [f for f in req if f not in it] for i, it in enumerate(items)
+            if isinstance(it, dict) and [f for f in req if f not in it]}
+    if miss:
+        return {"error": "items missing required fields (the API would 400 per item)",
+                "missing_by_index": miss, "required": req, "note": spec.get("note")}
+    if spec.get("clone_safe") is False:
+        items = [_strip_nested_ids(it) for it in items]
+    labels = [(i, {"name": it.get("name")}) for i, it in enumerate(items)]
+    wrapped = [{"itemIdentifier": i, "item": it, "requestAction": "SAVE"}
+               for i, it in enumerate(items)]
+    op = _bulk_ep(entity, "create")
+    client = _client()
+    if not confirm:
+        return {"TENANT": _tenant(client), "dry_run": True,
+                "action": f"{op['method']} {op['path']}", "count": len(items),
+                "would_create": items, "note": spec.get("note"),
+                "rollback": "wxcc_bulk_delete (or wxcc_delete) the created ids",
+                "next": "re-call with confirm=True once the user approves"}
+    status, body = client.json(op["method"], op["path"], {"items": wrapped})
+    if status >= 400 and not (isinstance(body, dict) and body.get("items")):
+        return {"http": status, "error": body}
+    return {"TENANT": _tenant(client), "http": status, **_bulk_collate(labels, body)}
+
+
+@mcp.tool()
+def wxcc_bulk_delete(entity: str, ids: list, confirm: bool = False) -> dict:
+    """Delete MANY objects of one entity in a single call.
+
+    Pass a list of ids. The bulk-delete endpoint rejects an id-only item with a
+    misleading 'system generated' 400, so this tool fetches each FULL object first and
+    sends that. The API self-guards references: a still-referenced object comes back as
+    a per-item 412 and is NOT deleted, while the rest of the batch still applies.
+
+    Irreversible. confirm=False (default) previews what each id is and writes nothing.
+    """
+    spec = _bulk_spec(entity)
+    op = _bulk_ep(entity, "delete")
+    client = _client()
+    objs, not_found = [], []
+    for _id in ids:
+        st, body = client.json("GET", _path(entity, _id))
+        if st == 404 or not isinstance(body, dict):
+            not_found.append(_id)
+        else:
+            objs.append(_strip(body))
+    labels = [(i, {"id": o.get("id"), "name": o.get("name")})
+              for i, o in enumerate(objs)]
+    if not confirm:
+        return {"TENANT": _tenant(client), "dry_run": True,
+                "action": f"{op['method']} {op['path']} (requestAction DELETE)",
+                "count": len(objs),
+                "would_delete": [dict(label) for _, label in labels],
+                "not_found": not_found or None, "note": spec.get("note"),
+                "rollback": "NONE - a delete is irreversible and recreating yields new "
+                            "ids. Still-referenced objects are blocked by the API "
+                            "(per-item 412), not deleted.",
+                "next": "re-call with confirm=True only after an explicit yes"}
+    wrapped = [{"itemIdentifier": i, "item": o, "requestAction": "DELETE"}
+               for i, o in enumerate(objs)]
+    status, body = client.json(op["method"], op["path"], {"items": wrapped})
+    if status >= 400 and not (isinstance(body, dict) and body.get("items")):
+        return {"http": status, "error": body}
+    out = {"TENANT": _tenant(client), "http": status, **_bulk_collate(labels, body)}
+    if not_found:
+        out["not_found"] = not_found
+    return out
 
 
 # --------------------------------------------------------------------------- #

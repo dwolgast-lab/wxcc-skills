@@ -3,6 +3,47 @@
 Notable changes to the wxcc-skills library. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); entries are dated, newest first.
 
+- **Fixed: an error body with `error` as a string crashed the caller instead of reporting.**
+  `_put_adaptive` (the read-modify-write retry behind `wxcc_update`) and the bulk per-item
+  collator both walked `error`/`apiError` assuming a nested dict, so a 4xx whose `error` is a
+  bare string raised `AttributeError: 'str' object has no attribute 'get'` — the API's own
+  message was lost and the tool call died. Both now go through one `_api_reason()` helper that
+  accepts either shape and stringifies anything else rather than dropping it. Valid usage never
+  hit this; it surfaced from a malformed request during bulk testing.
+- **Bulk writes: `wxcc_bulk_update` / `wxcc_bulk_create` / `wxcc_bulk_delete`** — act on many
+  objects of one entity in a single call, plus a `wxcc-bulk` skill. **Verified live on the
+  sandbox for six entities**, each op exercised end-to-end through the tools with baselines
+  restored: `contact-service-queue`, `entry-point`, `auxiliary-code`, `dial-number`,
+  `outdial-ani`, and **`cad-variable`** — the WxCC *Global Variables* entity, added here as the
+  15th registry entity (read + full single CRUD + bulk, all verified). Bulk support is
+  **per operation, per entity**, because the API is not uniform: `dial-number` has no bulk
+  delete (it would unmap a live number — refused by the tool), and `outdial-ani` has no bulk
+  update (an id-bearing save item → 400 "cannot have an id" — refused). Facts nailed down by
+  probing, each of which the tools now handle:
+  - **Routes and available ops are per-entity, one nested envelope.** Queues expose two routes:
+    `PATCH contact-service-queue/bulk` is a *partial* update and `POST
+    contact-service-queue/v2/bulk` saves; `auxiliary-code` is the same shape but both on
+    `/bulk`. `entry-point`, `cad-variable`, `dial-number` expose a single `POST {entity}/bulk`
+    with **no partial-patch route**, so `wxcc_bulk_update` read-modify-writes there (transparent
+    to the caller, who still passes only `{id, changed fields}`). A save item creates when it
+    has no id, deletes with `requestAction: DELETE`. Body is
+    `{"items":[{"itemIdentifier":<int>,"item":{...},"requestAction":"SAVE"|"DELETE"}]}` — the
+    array key is `items` but each element wraps the object under `item`; the response reuses
+    `items` with a per-item shape. Sending `{"items":[{id,...}]}` unwrapped is a 400.
+  - **Always HTTP 207 Multi-Status.** The tools collate the per-item results into
+    `succeeded` / `failed` (with the API's own reason) / `NOT_PROCESSED` — the last catches the
+    empty-result no-op, because a 207 is not proof anything applied.
+  - **Delete needs the FULL object**, not just an id (an id-only delete returns a misleading
+    `"Cannot Update/Delete system generated Entities"` 400) — so `wxcc_bulk_delete` takes ids
+    and fetches each object itself.
+  - **The API self-guards references per item**: a still-referenced delete comes back `412`
+    (proven on a queue's flow reference and an entry-point's dial-number reference), so no
+    client-side pre-flight is needed for bulk.
+  - **Registry-gated per (entity, op).** Each `bulk` block lists only the proven ops
+    (`create`/`update`/`delete`), each with its method, path tail, and whether update is a
+    native partial patch; the tools refuse an unverified entity or op and name what is
+    supported. Adding an entity is a live probe (an empty-`items` POST is a safe existence
+    check — 207 if the route exists, 404 if not) plus a registry block.
 - **`docs/marketing-hype.md` rewritten as plain Markdown**, matching the style of
   `user-guide.md`/`cloud-mcp-onboarding.md` instead of the hand-rolled HTML/CSS dashboard
   layout it started as, so it now flows through the same shared CSS in
