@@ -310,6 +310,80 @@ ENTITIES: dict[str, dict[str, Any]] = {
                 "(a full copy returns 409 'Internal error'). LIST OMITS `permissions` - "
                 "read the item. systemDefault=true objects cannot be modified.",
     },
+    "business-hours": {
+        "list": "v2/business-hours", "item": "business-hours/{id}",
+        "create": ["name", "timezone", "workingHours"],
+        "writes": ["create", "update", "delete"],
+        "bulk": {
+            "create": {"method": "POST", "tail": "business-hours/bulk"},
+            "delete": {"method": "POST", "tail": "business-hours/bulk"},
+        },
+        "note": "Entity name is PLURAL. `workingHours` must be NON-EMPTY (400 'Working "
+                "hours cannot be empty') - entries are {name, days:[MON..SUN], startTime, "
+                "endTime} with 24h 'HH:MM' times and 3-letter UPPERCASE days. `timezone` is "
+                "an IANA name (e.g. America/Chicago). `holidaysId` is a REFERENCE to a "
+                "holiday-list - GET holiday-list/{holidaysId} resolves it (verified). "
+                "Item path drops v2; the bare `business-hours` list alias returns a BARE "
+                "LIST, while v2/business-hours returns {data:[...]}. Bulk is create+delete; "
+                "no bulk update (400 id-wall, PATCH 405). Verified live 2026-07-21.",
+    },
+    "holiday-list": {
+        "list": "v2/holiday-list", "item": "holiday-list/{id}",
+        "create": ["name", "holidays"],
+        "writes": ["create", "update", "delete"],
+        "bulk": {
+            "create": {"method": "POST", "tail": "holiday-list/bulk"},
+            "delete": {"method": "POST", "tail": "holiday-list/bulk"},
+        },
+        "note": "`holidays` must be NON-EMPTY (400 'Holiday list cannot be empty'). Entries "
+                "are {name, startDate, endDate, frequency, recurrence:{interval, daysOfWeek, "
+                "specificDayOfMonth, specificMonth}} with ISO 'YYYY-MM-DD' dates. Unlike "
+                "business-hours and overrides this entity does NOT require `timezone` "
+                "(create with name+holidays alone returns 201 - verified). Referenced by "
+                "business-hours.holidaysId. Bulk is create+delete; no bulk update (400 "
+                "id-wall, PATCH 405). Verified live 2026-07-21.",
+    },
+    "overrides": {
+        "list": "v2/overrides", "item": "overrides/{id}",
+        "create": ["name", "timezone", "overrides"],
+        "writes": ["create", "update", "delete"],
+        "bulk": {
+            "create": {"method": "POST", "tail": "overrides/bulk"},
+            "delete": {"method": "POST", "tail": "overrides/bulk"},
+        },
+        "note": "Entity name is PLURAL and its own payload key is also `overrides` - the "
+                "array must be NON-EMPTY (400 'Overrides cannot be empty'). Entries are "
+                "{name, startDateTime, endDateTime, workingHours:bool, frequency, "
+                "recurrence:{interval, daysOfWeek}} with 'YYYY-MM-DDTHH:MM' datetimes (no "
+                "seconds, no zone - the record's `timezone` supplies it). `timezone` IS "
+                "required here even though holiday-list does not need it. Bulk is "
+                "create+delete; no bulk update (400 id-wall, PATCH 405). Verified live "
+                "2026-07-21.",
+    },
+    "contact-number": {
+        "list": "v2/contact-number", "item": "contact-number/{id}",
+        "create": ["number"],
+        "writes": ["create", "update", "delete"],
+        "bulk": {
+            "create": {"method": "POST", "tail": "contact-number/bulk"},
+            "delete": {"method": "POST", "tail": "contact-number/bulk"},
+        },
+        "note": "PURPOSE: the caller-ID value shown on INTERNAL calls (per the tenant "
+                "admin 2026-07-21 - stated, not API-verified). Despite the name this is "
+                "NOT the dial-number/DID inventory and nothing links the two. `number` is "
+                "the ONLY required field and is capped at 9 CHARACTERS - not E.164 (a "
+                "'+1...' value returns 400 'should not be more than 9 characters'). "
+                "`contact-number/all-numbers` is a real route but returns a BARE LIST OF "
+                "STRINGS (['5551234']), not objects - it is a convenience projection and "
+                "must NOT be used as the list path; v2/contact-number returns the "
+                "{data:[...]} objects. PUT requires the `id` IN THE PAYLOAD matching the "
+                "URL (400 'Invalid id: id in payload and URL should be same') - "
+                "wxcc_update read-modify-writes, so it already sends it. Bulk is "
+                "create+delete on contact-number/bulk; no bulk update (400 'New "
+                "configuration cannot have an id', PATCH 405). Import/export exist at "
+                "contact-number/import|export on **PUT** (GET 404s) - payload shape is "
+                "UNPROBED. All verified live 2026-07-21.",
+    },
     "resource-collection": {
         "list": "v2/resource-collection", "item": "resource-collection/{id}",
         "create": ["name", "resources"],

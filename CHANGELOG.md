@@ -3,6 +3,43 @@
 Notable changes to the wxcc-skills library. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); entries are dated, newest first.
 
+- **Four new entities — the scheduling family plus `contact-number` — taking the registry to
+  21, and `wxcc.py` to zero type errors.** All verified live on the sandbox 2026-07-21 through
+  full create/read/update/delete round trips; every probe object was deleted and a sweep across
+  all touched entities confirmed zero leftovers.
+  - **`business-hours`, `holiday-list`, `overrides`** (all three plural-or-not exactly as
+    written) follow the house pattern: list at `v2/<entity>`, item at `<entity>/{id}` (v2 →
+    404), create at bare `POST <entity>`, bulk at `<entity>/bulk`. Each requires a **non-empty
+    nested array** — `workingHours`, `holidays`, `overrides` respectively — so an empty-payload
+    probe can never finish the job; the shapes have to be cloned from a live record.
+    **`holiday-list` is the asymmetry worth knowing**: it does *not* require `timezone`, while
+    `business-hours` and `overrides` both do. `business-hours.holidaysId` is a real reference —
+    `GET holiday-list/{holidaysId}` resolves it.
+  - **`contact-number`** is the caller-ID value shown on **internal** calls (per the tenant
+    admin; stated, not API-verified). Despite the name it is **not** the DID inventory and
+    nothing links it to `dial-number`: `number` is the only required field and is capped at
+    **9 characters**, so an E.164 value returns `400 "should not be more than 9 characters"`.
+    Two traps: `contact-number/all-numbers` is a real route but returns a **bare list of
+    strings**, not objects, so it cannot be the list path (`v2/contact-number` is); and its
+    `PUT` demands the `id` **in the payload** matching the URL. Import/export exist at
+    `contact-number/import|export` on **PUT** (GET 404s) — payload shape still unprobed.
+  - **Bulk reaches 19 of 21 entities**, and the id-wall is now universal: every one of the 19
+    supports create + delete and **none** of the four added here supports update — same
+    `400 "New configuration cannot have an id"` with `PATCH` → 405.
+  - **`address-book` and `user` have NO bulk route — confirmed, not unprobed.** This corrects a
+    standing "unprobed" note. `address-book/bulk` answers *identically* to
+    `address-book/<any-garbage-id>`, so `bulk` is simply being parsed as an `{id}`. The
+    generalisable lesson: **only a `207` with an `items` envelope proves a bulk route exists.**
+    Status code cannot distinguish them (`GET team/bulk`, a working route, 404s exactly like
+    nonsense), and neither can the error-body shape (`trackingId` vs `timestamp` only reveals
+    whether the entity prefix is routed).
+  - **`wxcc.py`: 10 Pyright errors → 0**, eight of them from a single wrong annotation.
+    `die()` was declared `-> "None"` but its body is `raise WxccError(...)`; annotating it
+    `NoReturn` restored narrowing across the whole auth path at a stroke, with zero runtime
+    effect. The two real fixes: `log_message` now matches
+    `BaseHTTPRequestHandler.log_message(self, format, *args)` exactly, because the base calls
+    it with `format` as a **keyword** and the old `*_` was not a drop-in; and
+    `__doc__.splitlines()` is guarded, since `__doc__` is `None` under `python -OO`.
 - **New `wxcc_references` tool, bulk for four more entities, and a type cleanup that turned
   out to be a real crash class.** Verified live on the sandbox 2026-07-21; every probe object
   created was deleted and re-read as 404, and the entity counts were swept back to baseline.

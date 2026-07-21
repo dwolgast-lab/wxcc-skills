@@ -39,6 +39,7 @@ import urllib.request
 import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+from typing import NoReturn
 
 # --- Confirmed Webex OAuth endpoints (developer.webex.com). Portal move to the
 #     converged portal did not change these; webex-cx.com is deprecated. ---
@@ -122,7 +123,7 @@ class WxccError(Exception):
         self.code = code
 
 
-def die(msg: str, code: int = 1) -> "None":
+def die(msg: str, code: int = 1) -> NoReturn:
     raise WxccError(msg, code)
 
 
@@ -337,7 +338,9 @@ class _CallbackHandler(BaseHTTPRequestHandler):
               "Authorization failed. Check the terminal."
         self.wfile.write(f"<html><body><h3>{msg}</h3></body></html>".encode())
 
-    def log_message(self, *_):  # silence the default request logging
+    # Signature matches BaseHTTPRequestHandler.log_message exactly - the base
+    # calls it with `format` as a keyword in places, so `*_` is not a drop-in.
+    def log_message(self, format, *args):  # silence the default request logging
         pass
 
 
@@ -509,7 +512,9 @@ def cmd_write(cfg: dict, method: str, path: str, body_arg: str | None) -> None:
 # CLI
 # --------------------------------------------------------------------------- #
 def main(argv: list[str]) -> None:
-    parser = argparse.ArgumentParser(prog="wxcc", description=__doc__.splitlines()[0])
+    # __doc__ is None when run under `python -OO`, which strips docstrings.
+    parser = argparse.ArgumentParser(prog="wxcc",
+                                     description=(__doc__ or "wxcc.py").splitlines()[0])
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     p_auth = sub.add_parser("auth", help="authentication commands")

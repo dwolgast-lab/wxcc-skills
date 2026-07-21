@@ -1,6 +1,6 @@
 ---
 name: wxcc-bulk
-description: Use when asked to create, update, or delete MANY Webex Contact Center objects of one type in a single operation - "bulk update these queues", "create 20 entry points from this list", "bulk-create these global variables", "delete all these teams", "change the service level on every X queue at once". Mutating - requires cjp:config_write and explicit confirmation. Verified for contact-service-queue, entry-point, auxiliary-code, dial-number, outdial-ani, cad-variable (global variables), team, skill, skill-profile, user-profile, resource-collection, site, multimedia-profile, agent-profile (Desktop Profile), and desktop-layout - and which of create/update/delete each supports differs sharply. Other entities are refused until probed.
+description: Use when asked to create, update, or delete MANY Webex Contact Center objects of one type in a single operation - "bulk update these queues", "create 20 entry points from this list", "bulk-create these global variables", "delete all these teams", "change the service level on every X queue at once". Mutating - requires cjp:config_write and explicit confirmation. Verified for contact-service-queue, entry-point, auxiliary-code, dial-number, outdial-ani, cad-variable (global variables), team, skill, skill-profile, user-profile, resource-collection, site, multimedia-profile, agent-profile (Desktop Profile), desktop-layout, business-hours, holiday-list, overrides, and contact-number - and which of create/update/delete each supports differs sharply. Other entities are refused until probed.
 ---
 
 # wxcc-bulk — create / update / delete many objects in one call
@@ -59,7 +59,17 @@ an op an entity hasn't been proven to support. As of 2026-07-21:
 | `multimedia-profile` | ✅ | ❌ | ✅ | no bulk update, same 400; strip `workItem` when cloning (see the entity note) |
 | `agent-profile` (Desktop Profile) | ✅ | ❌ | ✅ | no bulk update, same 400; a clone MUST set `systemDefault=false` or every item 403s — the stock profiles are all systemDefault |
 | `desktop-layout` | ✅ | ❌ | ✅ | no bulk update, same 400; MUST send `global=false` and `teamIds=[]` — cloning a global layout gives a misleading 400 naming "Teams assigned" on a payload with no teams key |
+| `business-hours` | ✅ | ❌ | ✅ | no bulk update, same 400; `workingHours` must be non-empty |
+| `holiday-list` | ✅ | ❌ | ✅ | no bulk update, same 400; `holidays` must be non-empty; does NOT need `timezone` |
+| `overrides` | ✅ | ❌ | ✅ | no bulk update, same 400; `overrides` must be non-empty; DOES need `timezone` |
+| `contact-number` | ✅ | ❌ | ✅ | no bulk update, same 400; `number` only, max 9 chars |
 | `resource-collection` | ❌ | ✅ RMW | ❌ | **update only, and on PATCH**; create → 500 "no mapping for id", delete → 400 "SAVE only" |
+
+**`address-book` and `user` have no bulk route at all** — confirmed, not merely unprobed.
+`address-book/bulk` answers identically to `address-book/<any-garbage-id>` (POST 405 / PUT 400
+"name: should not be null or blank"), i.e. `bulk` is being parsed as an `{id}`. A *real* bulk
+route answers `POST` with a `207` and an `items` envelope; that is the only reliable test —
+status code alone cannot distinguish them, and neither can the error-body shape.
 
 ## wxcc_bulk_update — update many objects
 

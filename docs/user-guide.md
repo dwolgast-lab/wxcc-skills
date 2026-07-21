@@ -334,10 +334,10 @@ resolves to in your shell — **not** the MCP server you were just talking to.
 | Tool | Covers |
 |---|---|
 | `wxcc_whoami` | Which tenant am I actually on? Scopes, org, live read check |
-| `wxcc_list` / `wxcc_get` | Read any of 17 entities |
+| `wxcc_list` / `wxcc_get` | Read any of 21 entities |
 | `wxcc_references` | What points **at** this object — the delete pre-flight, asked on its own, about something you intend to keep |
 | `wxcc_create` / `wxcc_update` / `wxcc_delete` | Write one object, with dry-run + verify + reference-blocking |
-| `wxcc_bulk_update` / `wxcc_bulk_create` / `wxcc_bulk_delete` | Write **many** objects of one entity in a single call, per-item 207 results — 15 entities, but **which of create/update/delete each supports differs sharply** and the tool refuses an unverified pair |
+| `wxcc_bulk_update` / `wxcc_bulk_create` / `wxcc_bulk_delete` | Write **many** objects of one entity in a single call, per-item 207 results — 19 entities, but **which of create/update/delete each supports differs sharply** and the tool refuses an unverified pair |
 | `wxcc_list_entries` / `wxcc_add_entry` / `wxcc_update_entry` / `wxcc_remove_entry` | One entry at a time inside an address-book or outdial-ani |
 | `wxcc_search_tasks` | Calls/tasks/agent sessions (GraphQL) |
 | `wxcc_webhooks` | Event types + subscription CRUD |
@@ -347,7 +347,10 @@ Entities: `user`, `team`, `site`, `contact-service-queue`, `entry-point`, `dial-
 (**Desktop Profile** — the old path name is backwards compatibility only), `desktop-layout`,
 `multimedia-profile`, `cad-variable` (**Global Variables**), `user-profile` (**admin access
 rights**, pinned to v3 — not the Desktop Profile), `resource-collection` (the scoped
-groupings a user profile points at).
+groupings a user profile points at), `business-hours`, `holiday-list`, `overrides` (the
+scheduling family — `business-hours.holidaysId` references a `holiday-list`), and
+`contact-number` (the caller-ID value shown on **internal** calls — despite the name, not
+the DID inventory; `number` is capped at 9 characters).
 
 24 skills route to these — one per domain, split read/write where the risk differs, plus
 `wxcc-bulk` for many-at-once writes.
