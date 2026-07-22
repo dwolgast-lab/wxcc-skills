@@ -215,11 +215,39 @@ def _post_form(url: str, data: dict) -> dict:
         die(f"token endpoint {e.code}: {e.read().decode(errors='replace')}")
 
 
+def multipart_body(parts: list[tuple[str, str | None, str | None, bytes]],
+                   boundary: str = "----wxccpy7f3a1c") -> tuple[bytes, str]:
+    """Encode multipart/form-data. Parts are (name, filename, content_type, bytes).
+
+    Needed because `audio-file` create/replace accept ONLY multipart - a JSON body
+    returns 500 whatever its shape, despite the portal documenting application/json
+    as an alternative (verified against the sandbox 2026-07-22). A part's
+    content_type is not optional decoration: sending the metadata part without an
+    explicit `application/json` returns 415.
+    """
+    out = b""
+    for name, filename, ctype, payload in parts:
+        out += f"--{boundary}\r\n".encode()
+        disp = f'form-data; name="{name}"'
+        if filename:
+            disp += f'; filename="{filename}"'
+        out += f"Content-Disposition: {disp}\r\n".encode()
+        if ctype:
+            out += f"Content-Type: {ctype}\r\n".encode()
+        out += b"\r\n" + payload + b"\r\n"
+    out += f"--{boundary}--\r\n".encode()
+    return out, f"multipart/form-data; boundary={boundary}"
+
+
 def _request(url: str, token: str, method: str = "GET",
-             body: dict | list | None = None) -> tuple[int, str]:
+             body: dict | list | None = None,
+             raw: tuple[bytes, str] | None = None) -> tuple[int, str]:
+    """`raw` is (bytes, content_type) and wins over `body` - for multipart uploads."""
     headers = {"Authorization": f"Bearer {token}"}
     data = None
-    if body is not None:
+    if raw is not None:
+        data, headers["Content-Type"] = raw
+    elif body is not None:
         data = json.dumps(body).encode()
         headers["Content-Type"] = "application/json"
     req = urllib.request.Request(url, data=data, method=method, headers=headers)
@@ -259,6 +287,27 @@ class WxccClient:
     def request(self, method: str, path: str,
                 body: dict | list | None = None) -> tuple[int, str]:
         return _request(self.url(path), self.token, method=method, body=body)
+
+    def upload(self, method: str, path: str, field: str, filename: str,
+               file_bytes: bytes, file_type: str,
+               info_field: str, info: dict) -> tuple[int, object]:
+        """Send a file plus a JSON metadata part as multipart/form-data.
+
+        The shape `audio-file` requires: the binary under `field` (with a filename
+        and its own content type) and the metadata under `info_field` as an
+        explicitly-typed application/json part.
+        """
+        raw = multipart_body([
+            (field, filename, file_type, file_bytes),
+            (info_field, None, "application/json", json.dumps(info).encode()),
+        ])
+        status, text = _request(self.url(path), self.token, method=method, raw=raw)
+        if not text:
+            return status, None
+        try:
+            return status, json.loads(text)
+        except json.JSONDecodeError:
+            return status, text
 
     def json(self, method: str, path: str,
              body: dict | list | None = None) -> tuple[int, object]:

@@ -3,6 +3,98 @@
 Notable changes to the wxcc-skills library. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); entries are dated, newest first.
 
+- **2026-07-22 — BUG: `wxcc_delete` could never delete a `contact-number`, and the registry
+  claimed it could.** Found while writing skills for the scheduling group. `GET
+  contact-number/{id}/incoming-references` answers **400 "specify a valid external entity
+  type"** for a valid id, a bogus id, and every `?type=` tried (user, team, flow, site,
+  contact-number, agent-profile) — the route simply does not work for this entity.
+  `_find_references` correctly refuses to let a failed scan read as "clean" and returns a
+  `scan_failed` marker, but `wxcc_delete` counted every returned element as a conflicting
+  reference. Net effect: the tool reported *"1 object(s) still reference this"* when nothing
+  did, and **the delete was unreachable**. The prior "verified delete round trip" for this
+  entity must have gone through the raw CLI, not the tool.
+  - **Fix:** a registry flag `no_incoming_references` marks an entity whose scan route does
+    not exist. `wxcc_delete` then skips the pre-flight and returns `REFERENCES_NOT_CHECKED`
+    stating plainly that nothing was checked and that only the API's own 412 remains — a
+    backstop confirmed for other entities and **unconfirmed for this one**. `wxcc_references`
+    returns `SCAN_IMPOSSIBLE` with `total: null` rather than an empty list, because "nobody
+    can tell you" must never render as "nothing points here."
+  - **Regression-checked:** entities with a working scan are unchanged — `holiday-list` still
+    blocks with its three real referents named, and an unreferenced `business-hours` dry run
+    still reports `no_blocking_references` with no spurious warning.
+- **2026-07-22 — Skills for the scheduling family and contact numbers; no new endpoints.**
+  Skills reach **27**. Diffing the portal's endpoint list against the registry found **zero
+  gaps**: all 21 Business Hours / Holiday List / Overrides routes and all of Contact
+  Number's were already registered (2026-07-21), so the work was documentation plus the
+  delete bug above. `contact-number/all-numbers` stays unexposed (bare strings, no ids) and
+  bulk-export is out of scope.
+  - **New `wxcc-business-hours`** covers all three interlocking entities. New facts probed
+    today: **`business-hours.overridesId` is a second real reference** (→ `overrides`), and a
+    record with no holiday or override binding simply **omits the key** — this API drops
+    unset fields rather than returning null, so a missing key is not a list/item discrepancy
+    (checked per record; list and item agree on all three). **Business hours are referenced
+    by flows** — the sandbox's `StandardCallFlow` binds `Standard_Working_Hours` — so an
+    hours edit changes live routing.
+  - **Holiday recurrence rules, probed:** `frequency` is OPTIONAL (omit for a one-off);
+    `Yearly` requires `recurrence.specificMonth`; `Monthly` requires **either**
+    `specificDayOfMonth` **or** `occurrenceInTheMonth`; `Weekly` takes `daysOfWeek`. There is
+    no `"None"` value — `frequency:"None"` is a deserialize error.
+  - **Name charset is enforced tenant-wide** on all three: alphanumerics, space, `_`, `-`
+    only; `.`, `+` and `/` each 400. Worth recording because it cost a wasted probe round —
+    three "recurrence" failures were actually the validator rejecting the *test label* I had
+    put in `name`, which briefly looked like a recurrence rule that does not exist.
+  - **New `wxcc-contact-numbers`** documents the 9-character cap, the absence of any
+    `name`/`description` field, the `all-numbers` projection trap, and the broken reference
+    scan above.
+- **2026-07-22 — `audio-file`: the first entity that takes a file, and the first with a real
+  single-item PATCH.** Registry goes to **22 entities**, skills to **25**. Verified live on
+  the sandbox 2026-07-22 through a full create / read / patch / multipart-put / references /
+  delete round trip; every probe object was deleted and the count swept back to 11.
+  - **Multipart is the ONLY way in, and the portal says otherwise.** Cisco's schema documents
+    the create body as "either application/json or multipart/form-data". **The JSON half is
+    false** — five distinct JSON shapes (bare fields, the documented
+    `{audioFileInfo, audioFile}` envelope, base64 in `audioFile`, base64 in both places, the
+    literal `"string"` placeholder) all return a bare **500**, as does a JSON `PUT`. The
+    working shape is two parts: `audioFile` (bytes, with a filename and its own content type)
+    and `audioFileInfo` (metadata JSON that **must** declare `Content-Type: application/json`
+    — omit that header and the request is **415**, omit the part and it is **400**).
+    Consequence for method: **the probe-an-empty-body-and-read-the-400 technique that mapped
+    the other 21 entities cannot work here** — it returns a 500 that names nothing.
+  - **`PUT` demands the record's OWN `blobId`**, and it is an ownership token rather than a
+    selector: omitting it is `400 "blobId: invalid value"`, and passing *another* record's
+    blobId is the same 400 (tested — record unchanged). The blob is overwritten **in place**,
+    so **blobId does not rotate on replace**.
+  - **A replace cannot be verified, and the tools now say so.** There is no download route —
+    the DTO documents a `url` field that **no** sandbox record returns, and `.../content` and
+    `.../download` 404. So after any audio replacement `wxcc_update` returns
+    `AUDIO_NOT_VERIFIABLE` and the dry run returns `ALSO_REPLACES_AUDIO` warning that the old
+    audio is unrecoverable. Only playback in Control Hub can confirm a replace.
+  - **Upload is local-only by design.** `wxcc_create`/`wxcc_update` take `file_path`, an
+    absolute path on the machine running the server. The cloud servers share no filesystem
+    with the caller, so they refuse the upload with an explanation and point at the local
+    server; every other audio-file operation works on both.
+  - **`contentType` has two live spellings for the same thing** — `AUDIO_WAV` and
+    `AUDIO_X_WAV` both occur among the 11 sandbox records, so neither is "the" correct value.
+  - **Cisco doc bug, recorded so nobody re-derives meaning from it:** the schema describes
+    `audio-file.description` as *"a short description of the dial plan"* — a copy-paste from
+    a different, deprecated entity.
+  - `wxcc.py` gains `multipart_body()` and `WxccClient.upload()`; `_request` gained a `raw`
+    parameter so a non-JSON body can be sent. Existing callers are untouched.
+- **2026-07-22 — `auxiliary-code` purge: route exists, 403s, deliberately NOT exposed.**
+  `POST auxiliary-code/purge-inactive-entities` is real — it answers **403 "Access denied"**
+  with the app's `trackingId` error shape, where a nonexistent sub-path answers **405** with
+  the framework's `timestamp` shape. It 403s for a **full-rights tenant admin** holding
+  `cjp:config_write`, and the required scope is undocumented. Rather than ship a destructive
+  tool nobody can call, the skill now routes "delete all the inactive codes" through
+  list → filter `active=false` in code → `wxcc_bulk_delete`, which is aimable at exactly the
+  codes the user chose. The remaining aux-code endpoints in Cisco's list were **already
+  shipped** — only purge was a gap, and bulk-export is out of scope.
+  - **Method note:** the first control batch for this probe would have fired
+    `purge-inactive-entities` at `agent-profile` and `team` as "controls" — two more
+    mass-destructive calls on entity families nobody had authorized. A guardrail caught it.
+    The only safe control for a destructive route is a **harmless sibling path on the same
+    entity**, never the same destructive route aimed somewhere else.
+
 - **2026-07-22 — CORRECTION: two shipped claims about entry/bulk routes were false.** Both had
   been published here as *confirmed*. Earlier entries below are left as originally written;
   this entry supersedes them.

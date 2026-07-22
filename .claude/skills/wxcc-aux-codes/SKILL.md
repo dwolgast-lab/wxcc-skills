@@ -52,6 +52,24 @@ wxcc_delete(entity="auxiliary-code", id="CODE-ID")
 **same `workTypeCode`** (all IDLE_CODEs share one, all WRAP_UP_CODEs another). Get it from
 the list recipe above. The tool requires it on create because the API 400s without it.
 
+## "Delete all the inactive codes"
+
+There **is** a purge endpoint — `POST auxiliary-code/purge-inactive-entities` — and it is
+**deliberately not exposed**. It returns **403 "Access denied"** even for a full-rights
+tenant admin holding `cjp:config_write`, and Cisco does not document which scope it needs
+(probed 2026-07-22). The route itself is real: it answers with the app's `trackingId` error
+shape, where a nonexistent sub-path answers 405 with the framework's `timestamp` shape.
+
+Do this instead — it is aimable at exactly the codes the user chose, which a tenant-wide
+sweep is not:
+
+1. `wxcc_list(entity="auxiliary-code", all_pages=true)`
+2. Filter `active == false` **in code**, and show the user the resulting names.
+3. `wxcc_bulk_delete(entity="auxiliary-code", ids=[...], confirm=True)` — or
+   `wxcc_delete` one at a time for a short list.
+
+Never present the purge endpoint as an option the user could reach another way.
+
 ## Traps
 
 | Item | Detail |
@@ -59,6 +77,7 @@ the list recipe above. The tool requires it on create because the API 400s witho
 | `isSystemCode: true` codes | Platform-owned (RONA etc.). **Do not delete** — behavior untested and they are not yours (candidate/danger). Warn the user if they ask. |
 | `workTypeId` | Must match the `workTypeCode` family; copy from a sibling |
 | Creating ≠ visible to agents | Desktop Profile controls exposure — **wxcc-desktop-profiles** |
+| Bulk export | `GET auxiliary-code/bulk-export` is out of scope for these tools — not probed, not exposed. |
 
 ## Provenance and maintenance
 

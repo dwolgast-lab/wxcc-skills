@@ -334,7 +334,7 @@ resolves to in your shell — **not** the MCP server you were just talking to.
 | Tool | Covers |
 |---|---|
 | `wxcc_whoami` | Which tenant am I actually on? Scopes, org, live read check |
-| `wxcc_list` / `wxcc_get` | Read any of 21 entities |
+| `wxcc_list` / `wxcc_get` | Read any of 22 entities |
 | `wxcc_references` | What points **at** this object — the delete pre-flight, asked on its own, about something you intend to keep |
 | `wxcc_create` / `wxcc_update` / `wxcc_delete` | Write one object, with dry-run + verify + reference-blocking |
 | `wxcc_bulk_update` / `wxcc_bulk_create` / `wxcc_bulk_delete` | Write **many** objects of one entity in a single call, per-item 207 results — 19 entities, but **which of create/update/delete each supports differs sharply** and the tool refuses an unverified pair |

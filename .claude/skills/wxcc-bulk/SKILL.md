@@ -64,6 +64,7 @@ an op an entity hasn't been proven to support. As of 2026-07-21:
 | `overrides` | ✅ | ❌ | ✅ | no bulk update, same 400; `overrides` must be non-empty; DOES need `timezone` |
 | `contact-number` | ✅ | ❌ | ✅ | no bulk update, same 400; `number` only, max 9 chars |
 | `resource-collection` | ❌ | ✅ RMW | ❌ | **update only, and on PATCH**; create → 500 "no mapping for id", delete → 400 "SAVE only" |
+| `audio-file` | ❌ | ❌ | ❌ | **no bulk route published** (2026-07-22). Each file is a multipart upload — see **wxcc-audio-files**. Bulk-export is out of scope for these tools. |
 
 ### Correction (2026-07-22): "address-book and user have no bulk route at all" was WRONG
 

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import re
 import urllib.parse
+from pathlib import Path
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
@@ -170,7 +171,16 @@ ENTITIES: dict[str, dict[str, Any]] = {
         "note": "workTypeId is not derivable - copy it from an existing code with "
                 "the same workTypeCode (WRAP_UP_CODE or IDLE_CODE). The `work-type` "
                 "entity itself is DEPRECATED/obsolete in WxCC - do NOT register it "
-                "here just because this id references it.",
+                "here just because this id references it. "
+                "PURGE IS NOT EXPOSED: `POST auxiliary-code/purge-inactive-entities` "
+                "exists (it answers 403 with the app's trackingId error shape, where a "
+                "nonexistent sub-path answers 405 with the framework's timestamp shape) "
+                "but returns 403 'Access denied' even for a full-rights tenant admin "
+                "holding cjp:config_write, and the required scope is not documented "
+                "(2026-07-22). To delete every inactive code, list with the tool, filter "
+                "active=false IN CODE, and pass those ids to wxcc_bulk_delete - that is "
+                "aimable at exactly the codes you chose, which a tenant-wide purge is "
+                "not.",
     },
     "address-book": {
         "list": "v2/address-book", "item": "address-book/{id}",
@@ -325,7 +335,14 @@ ENTITIES: dict[str, dict[str, Any]] = {
                 "holiday-list - GET holiday-list/{holidaysId} resolves it (verified). "
                 "Item path drops v2; the bare `business-hours` list alias returns a BARE "
                 "LIST, while v2/business-hours returns {data:[...]}. Bulk is create+delete; "
-                "no bulk update (400 id-wall, PATCH 405). Verified live 2026-07-21.",
+                "no bulk update (400 id-wall, PATCH 405). `overridesId` is a SECOND real "
+                "reference (-> overrides). Both it and holidaysId are simply ABSENT from a "
+                "record that has none: this API OMITS unset fields rather than returning "
+                "null, so a missing key is not a list-vs-item discrepancy (checked per "
+                "record 2026-07-22). NAME CHARSET is enforced: alphanumerics, space, `_` "
+                "and `-` only - '.', '+' and '/' each 400 with 'should only contain "
+                "alphanumeric characters...' (same validator on holiday-list and "
+                "overrides). Verified live 2026-07-21, extended 2026-07-22.",
     },
     "holiday-list": {
         "list": "v2/holiday-list", "item": "holiday-list/{id}",
@@ -340,7 +357,13 @@ ENTITIES: dict[str, dict[str, Any]] = {
                 "specificDayOfMonth, specificMonth}} with ISO 'YYYY-MM-DD' dates. Unlike "
                 "business-hours and overrides this entity does NOT require `timezone` "
                 "(create with name+holidays alone returns 201 - verified). Referenced by "
-                "business-hours.holidaysId. Bulk is create+delete; no bulk update (400 "
+                "business-hours.holidaysId. FREQUENCY RULES (probed 2026-07-22): "
+                "`frequency` is OPTIONAL - omit it and the entry is a one-off (201). "
+                "`Yearly` REQUIRES recurrence.specificMonth (400 names it). `Monthly` "
+                "REQUIRES either specificDayOfMonth OR occurrenceInTheMonth (400 names "
+                "both). `Weekly` takes daysOfWeek. There is no 'None' value - "
+                "frequency:'None' is a deserialize error, so OMIT the key instead. Same "
+                "NAME CHARSET rule as business-hours. Bulk is create+delete; no bulk update (400 "
                 "id-wall, PATCH 405). Verified live 2026-07-21.",
     },
     "overrides": {
@@ -368,7 +391,19 @@ ENTITIES: dict[str, dict[str, Any]] = {
             "create": {"method": "POST", "tail": "contact-number/bulk"},
             "delete": {"method": "POST", "tail": "contact-number/bulk"},
         },
-        "note": "PURPOSE: the caller-ID value shown on INTERNAL calls (per the tenant "
+        # No incoming-references route: 400 "specify a valid external entity type"
+        # for every id AND every ?type= tried (2026-07-22). Without this flag the
+        # delete pre-flight counted that failure as a reference and blocked forever.
+        "no_incoming_references": True,
+        "note": "REFERENCE SCANNING IS IMPOSSIBLE for this entity - "
+                "contact-number/{id}/incoming-references answers 400 'specify a valid "
+                "external entity type' for a valid id, a bogus id, and every ?type= "
+                "value tried (user, team, flow, site, contact-number, agent-profile). "
+                "So wxcc_references cannot answer for it and wxcc_delete does NOT "
+                "pre-flight it - the delete proceeds with REFERENCES_NOT_CHECKED set, "
+                "leaving only the API's own 412 as a guard (that 412 is confirmed for "
+                "OTHER entities, unconfirmed here). "
+                "PURPOSE: the caller-ID value shown on INTERNAL calls (per the tenant "
                 "admin 2026-07-21 - stated, not API-verified). Despite the name this is "
                 "NOT the dial-number/DID inventory and nothing links the two. `number` is "
                 "the ONLY required field and is capped at 9 CHARACTERS - not E.164 (a "
@@ -383,6 +418,44 @@ ENTITIES: dict[str, dict[str, Any]] = {
                 "configuration cannot have an id', PATCH 405). Import/export exist at "
                 "contact-number/import|export on **PUT** (GET 404s) - payload shape is "
                 "UNPROBED. All verified live 2026-07-21.",
+    },
+    "audio-file": {
+        "list": "v2/audio-file", "item": "audio-file/{id}",
+        "create": ["name", "contentType"],
+        "writes": ["create", "update", "delete"],
+        "upload": {
+            "field": "audioFile", "info_field": "audioFileInfo",
+            "file_type": "audio/wav",
+        },
+        # A real single-item PATCH, at the item path. No other entity has one.
+        "patch_item": True,
+        "note": "THE ONLY ENTITY THAT TAKES A FILE. Create and audio-replacing update are "
+                "multipart/form-data ONLY: a JSON body returns a bare 500 whatever its "
+                "shape - bare fields, the documented {audioFileInfo,audioFile} envelope, "
+                "base64, and the literal \"string\" placeholder were all tried "
+                "(2026-07-22). The portal documents application/json as an accepted "
+                "alternative; IT IS NOT. The metadata part must declare Content-Type "
+                "application/json or the whole request is 415, and omitting the metadata "
+                "part is 400. `contentType` is an enum whose two wav spellings BOTH occur "
+                "live in one tenant (AUDIO_WAV and AUDIO_X_WAV); full set per the portal "
+                "is AUDIO_WAV|AUDIO_X_WAV|TEXT_HTML|TEXT_PHP|APPLICATION_OCTET_STREAM. "
+                "`name` should carry the .wav extension. THE ONLY ENTITY WITH A WORKING "
+                "SINGLE-ITEM PATCH: metadata edits are a partial application/json PATCH, "
+                "so wxcc_update does NOT read-modify-write here unless the audio itself is "
+                "being replaced. REPLACING THE AUDIO is a multipart PUT that demands BOTH "
+                "parts and the record's OWN blobId: omitting blobId 400s naming it, "
+                "omitting the audioFile part 400s, and another record's blobId 400s "
+                "'blobId: invalid value' - so blobId is an ownership token, NOT a selector "
+                "for arbitrary audio. The blob is overwritten IN PLACE (blobId does not "
+                "rotate on replace), and since nothing reads the bytes back, A SUCCESSFUL "
+                "REPLACE CANNOT BE VERIFIED THROUGH THIS API - tell the user to confirm by "
+                "playing the file in Control Hub. No bulk route is published. The "
+                "DTO documents a `url` download field but NO sandbox record returns it, "
+                "and .../content and .../download 404 - there is no way to read the bytes "
+                "back. The portal describes `description` as 'a short description of the "
+                "dial plan', which is a copy-paste error in Cisco's schema - it is just a "
+                "description. All verified live 2026-07-22 via a full create/read/patch/"
+                "put/delete round trip.",
     },
     "resource-collection": {
         "list": "v2/resource-collection", "item": "resource-collection/{id}",
@@ -485,6 +558,36 @@ def _client() -> wxcc.WxccClient:
             access.token,
         )
     return wxcc.client_from_store(wxcc.load_config())
+
+
+def _served_remotely() -> bool:
+    """True when this process is answering over HTTP rather than local stdio.
+
+    Same signal `_client` uses. It matters for uploads: a remote server shares no
+    filesystem with the caller, so a local audio path names a file that does not
+    exist here - and might name a DIFFERENT file that does.
+    """
+    try:
+        from mcp.server.auth.middleware.auth_context import get_access_token
+        return get_access_token() is not None
+    except Exception:
+        return False
+
+
+def _read_upload(file_path: str) -> tuple[bytes, str]:
+    """Read a local file for a multipart upload, or say precisely why it cannot."""
+    if _served_remotely():
+        raise ValueError(
+            "This is the CLOUD server; it cannot read files from your machine. "
+            "Audio upload (create, and update that replaces the audio) works only "
+            "on the LOCAL stdio server - use the wxcc-sandbox / wxcc-gold / "
+            "wxcc-hdsupply tools for this one call. Reading, renaming, editing the "
+            "description, and deleting audio files all work here."
+        )
+    p = Path(file_path)
+    if not p.is_file():
+        raise ValueError(f"no file at {file_path!r} - pass an absolute local path.")
+    return p.read_bytes(), p.name
 
 
 # Cache: org identity is immutable for the life of a token, and every tool call
@@ -779,6 +882,21 @@ def wxcc_references(entity: str, id: str) -> dict:
     """
     client = _client()
     obj = _read(client, entity, id)      # raises on a bad id, so empty means empty
+
+    # Some entities have no such route at all. Returning an empty referenced_by
+    # here would be the exact wrong answer this tool exists to avoid.
+    if _entity(entity).get("no_incoming_references"):
+        return {
+            "tenant": _tenant(client), "entity": entity, "id": id,
+            "name": obj.get("name"),
+            "SCAN_IMPOSSIBLE": f"{entity} has no working incoming-references route "
+                               "(400 'specify a valid external entity type' for every "
+                               "id and every ?type=). This is NOT 'nothing references "
+                               "it' - it is 'nobody can tell you'. Do not report this "
+                               "object as safe to change or delete.",
+            "referenced_by": None, "total": None,
+        }
+
     hits = _find_references(client, entity, id)
 
     groups: dict[str, list[dict]] = {}
@@ -803,17 +921,27 @@ def wxcc_references(entity: str, id: str) -> dict:
 # Write tools - dry-run by default, re-read after every confirmed write.
 # --------------------------------------------------------------------------- #
 @mcp.tool()
-def wxcc_create(entity: str, fields: dict, confirm: bool = False) -> dict:
+def wxcc_create(entity: str, fields: dict, confirm: bool = False,
+                file_path: str = "") -> dict:
     """Create a WxCC config object.
 
     With confirm=False (default) this WRITES NOTHING: it validates the required
     fields and returns a preview plus the rollback. Show that preview to the user
     and get an explicit yes before calling again with confirm=True.
+
+    `file_path` is REQUIRED for `audio-file` and ignored by every other entity: an
+    absolute path on the machine running this server to the .wav to upload. The
+    cloud server cannot read your disk and will say so.
     """
     spec = _entity(entity)
     if "create" not in spec.get("writes", []):
         return {"refused": f"create is not supported/proven for {entity}",
                 "why": spec.get("note", "")}
+
+    upload = spec.get("upload")
+    if upload and not file_path:
+        return {"error": f"{entity} carries a file - pass file_path=<absolute path "
+                         "to the .wav on this machine>.", "note": spec.get("note")}
 
     missing = [f for f in spec.get("create", []) if f not in fields]
     if missing:
@@ -831,13 +959,20 @@ def wxcc_create(entity: str, fields: dict, confirm: bool = False) -> dict:
 
     if not confirm:
         return {"TENANT": _tenant(_client()), "dry_run": True,
-                "action": f"POST {_path(entity, write=True)}",
+                "action": f"POST {_path(entity, write=True)}"
+                          + (f" (multipart, uploading {file_path})" if upload else ""),
                 "would_create": fields, "note": spec.get("note"),
                 "rollback": f"wxcc_delete(entity='{entity}', id=<new id>, confirm=True)",
                 "next": "re-call with confirm=True once the user approves"}
 
     client = _client()
-    status, body = client.json("POST", _path(entity, write=True), fields)
+    if upload:
+        blob, filename = _read_upload(file_path)
+        status, body = client.upload(
+            "POST", _path(entity, write=True), upload["field"], filename, blob,
+            upload["file_type"], upload["info_field"], fields)
+    else:
+        status, body = client.json("POST", _path(entity, write=True), fields)
     if status >= 400:
         return {"created": False, "http": status, "error": body}
     new_id = _as_dict(body).get("id")
@@ -848,11 +983,16 @@ def wxcc_create(entity: str, fields: dict, confirm: bool = False) -> dict:
 
 
 @mcp.tool()
-def wxcc_update(entity: str, id: str, changes: dict, confirm: bool = False) -> dict:
+def wxcc_update(entity: str, id: str, changes: dict, confirm: bool = False,
+                file_path: str = "") -> dict:
     """Update a WxCC config object (read-modify-write full-object PUT).
 
     Reads the current object, merges `changes`, and PUTs the whole thing back -
-    this API replaces, it does not patch.
+    this API replaces, it does not patch. `audio-file` is the exception: it has a
+    real partial PATCH, so a metadata edit sends only `changes`.
+
+    `file_path` REPLACES THE AUDIO of an existing `audio-file` (absolute local
+    path); omit it to edit name/description only. Ignored by other entities.
 
     With confirm=False (default) this WRITES NOTHING: it returns a field-by-field
     diff and the rollback. After a confirmed write it RE-READS and reports any
@@ -862,6 +1002,8 @@ def wxcc_update(entity: str, id: str, changes: dict, confirm: bool = False) -> d
     if "update" not in spec.get("writes", []):
         return {"refused": f"update is not supported/proven for {entity}",
                 "why": spec.get("note", "")}
+    if file_path and not spec.get("upload"):
+        return {"refused": f"{entity} carries no file - file_path is meaningless here."}
 
     client = _client()
     current = _read(client, entity, id)
@@ -872,14 +1014,41 @@ def wxcc_update(entity: str, id: str, changes: dict, confirm: bool = False) -> d
     if not diff:
         return {"no_op": True, "reason": "every requested value already matches"}
 
+    # audio-file is the one entity with a working single-item PATCH. Use it for a
+    # metadata edit: no full-object echo, so nothing to silently mangle. Replacing
+    # the audio still needs the multipart PUT, which 400s unless blobId is carried
+    # forward - `proposed` has it, straight from the read above.
+    use_patch = bool(spec.get("patch_item")) and not file_path
+    verb = "PATCH" if use_patch else "PUT"
+
     if not confirm:
         return {"TENANT": _tenant(client), "dry_run": True,
-                "action": f"PUT {_path(entity, id)}", "diff": diff, "note": spec.get("note"),
+                "action": f"{verb} {_path(entity, id)}"
+                          + (f" (multipart, replacing audio with {file_path})"
+                             if file_path else ""),
+                "diff": diff, "note": spec.get("note"),
                 "rollback": "wxcc_update with the original values shown under "
                             "'from' above",
+                "ALSO_REPLACES_AUDIO": ({
+                    "file": file_path,
+                    "irreversible": "The current audio is overwritten. This tool cannot "
+                                    "download it first, so it CANNOT be restored unless "
+                                    "the user still has the original file. Say that "
+                                    "before they approve.",
+                } if file_path else None),
                 "next": "re-call with confirm=True once the user approves"}
 
-    status, body, stripped = _put_adaptive(client, _path(entity, id), proposed)
+    stripped: list[str] = []
+    if use_patch:
+        status, body = client.json("PATCH", _path(entity, id), changes)
+    elif file_path:
+        upload = spec["upload"]
+        blob, filename = _read_upload(file_path)
+        status, body = client.upload(
+            "PUT", _path(entity, id), upload["field"], filename, blob,
+            upload["file_type"], upload["info_field"], proposed)
+    else:
+        status, body, stripped = _put_adaptive(client, _path(entity, id), proposed)
     if status >= 400:
         return {"updated": False, "http": status, "error": body,
                 "note": spec.get("note")}
@@ -921,7 +1090,18 @@ def wxcc_update(entity: str, id: str, changes: dict, confirm: bool = False) -> d
                    "timestamps and may reorder arrays. Read 'actual' and confirm it "
                    "is what the user asked for.",
         } if unverified else None,
-        "rollback": {k: v["from"] for k, v in diff.items()},
+        "AUDIO_NOT_VERIFIABLE": ({
+            "uploaded": file_path,
+            "why": "The API accepted the new audio (HTTP 200) and blobId stays the "
+                   "same by design - the blob is overwritten in place. But nothing "
+                   "reads the bytes back, so this tool CANNOT confirm the new audio "
+                   "landed. Do not tell the user the audio is replaced; tell them to "
+                   "play the file in Control Hub to confirm.",
+        } if file_path else None),
+        "rollback": ({k: v["from"] for k, v in diff.items()} if not file_path else
+                     {"metadata": {k: v["from"] for k, v in diff.items()},
+                      "audio": "NOT ROLLED BACK BY THIS - the previous audio is gone. "
+                               "Re-upload the original file to restore it."}),
     }
 
 
@@ -945,7 +1125,13 @@ def wxcc_delete(entity: str, id: str, confirm: bool = False) -> dict:
     # Pre-flight references. This BLOCKS the delete - in the dry run AND on a
     # confirmed call - so the user gets an actionable list of what to fix rather
     # than a bare 412 after the fact. The API's own 412 is still the backstop.
-    refs = _find_references(client, entity, id)
+    #
+    # A few entities have NO working incoming-references route at all (see the
+    # registry flag). For those the scan is not "failing" - it does not exist, and
+    # counting its failure as a reference made the delete permanently unreachable.
+    # Skip it and say so loudly; the API's 412 is then the only guard.
+    scan_unavailable = bool(spec.get("no_incoming_references"))
+    refs = [] if scan_unavailable else _find_references(client, entity, id)
     if refs:
         return {
             "TENANT": _tenant(client),
@@ -963,10 +1149,22 @@ def wxcc_delete(entity: str, id: str, confirm: bool = False) -> dict:
             "deleted": False,
         }
 
+    unchecked = ({
+        "why": f"{entity} has NO working incoming-references route - it answers 400 "
+               "'specify a valid external entity type' for every id and every ?type= "
+               "(verified 2026-07-22). So NOTHING was checked: this tool cannot tell "
+               "you what points at this object.",
+        "residual_guard": "Only the API's own 412-on-referenced-delete stands between "
+                          "this and breaking a reference. That backstop is CONFIRMED "
+                          "for other entities but NOT for this one.",
+        "tell_the_user": "Say the reference check could not run before they approve.",
+    } if scan_unavailable else None)
+
     if not confirm:
         return {"TENANT": _tenant(client), "dry_run": True,
                 "action": f"DELETE {_path(entity, id)}", "would_destroy": current, "note": spec.get("note"),
-                "no_blocking_references": True,
+                "no_blocking_references": not scan_unavailable,
+                "REFERENCES_NOT_CHECKED": unchecked,
                 "rollback": "NONE - a delete cannot be undone via the API. "
                             "Recreating produces a new id; references to the old "
                             "id will not be restored.",
@@ -987,7 +1185,8 @@ def wxcc_delete(entity: str, id: str, confirm: bool = False) -> dict:
     gone_status, _ = client.json("GET", _path(entity, id))
     return {"TENANT": _tenant(client), "deleted": True, "http": status,
             "verified_gone": gone_status == 404,
-            "reread_status": gone_status}
+            "reread_status": gone_status,
+            "REFERENCES_NOT_CHECKED": unchecked}
 
 
 # --------------------------------------------------------------------------- #
