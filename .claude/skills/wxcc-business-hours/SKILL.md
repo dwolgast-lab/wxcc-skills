@@ -36,9 +36,12 @@ asking what breaks if a schedule changes.
 ## Read
 
 ```
-wxcc_list(entity="business-hours")                  # also holiday-list, overrides
+wxcc_list(entity="business-hours")
+wxcc_list(entity="holiday-list")
+wxcc_list(entity="overrides")
 wxcc_get(entity="business-hours", id="<id>")
 wxcc_references(entity="holiday-list", id="<id>")   # which schedules use this list
+wxcc_references(entity="overrides", id="<id>")      # which schedules use this override set
 ```
 
 Resolve the links by hand — they are plain ids:

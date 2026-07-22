@@ -3,6 +3,30 @@
 Notable changes to the wxcc-skills library. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); entries are dated, newest first.
 
+- **2026-07-22 — The API reference is now generated, with drift detection.**
+  `scripts/build_api_reference.py` fetches Cisco's live spec, merges it with the `ENTITIES`
+  registry, and emits three artifacts. Skills reach **28**.
+  - **`docs/api-coverage.md`** — every operation with the tool that reaches it, or the
+    reason it is refused. **`.claude/skills/wxcc-api-map/SKILL.md`** — a thin index for
+    *extending* the project (entity → routes → owning skill) that deliberately restates no
+    traps, so there is still one home per fact. **`docs/api-fingerprint.json`** — 26 KB of
+    route inventory instead of a 3.5 MB vendored spec.
+  - **`--check` names what moved upstream.** Verified by corrupting a fingerprint on
+    purpose: it reported the 7 restored `audio-file` routes as additions and the planted
+    fake as a removal, exit 1. A clean run against an unchanged spec proves nothing on its
+    own, which is why the failing case was tested too.
+  - The generator reads `ENTITIES` by **parsing `mcp_server.py` with `ast`**, not importing
+    it — a docs build has no business requiring the MCP package or a tenant config.
+  - **Two bugs caught during the build, both by the harness rather than by inspection.**
+    The generated SKILL.md put its "do not hand-edit" banner *above* the YAML frontmatter,
+    so the skill registered with an HTML comment as its description. And the first
+    ownership heuristic matched any mention of an entity, so `wxcc-api-map` and `wxcc-bulk`
+    — which name every entity by design — looked like the owner of all 22.
+  - **The index immediately found a real gap: `cad-variable` (WxCC "Global Variables") has
+    NO owning skill.** Full CRUD plus bulk are reachable, but nothing documents them or
+    warns about the traps already recorded in its registry note. Ownership is now derived
+    from a skill actually *calling* an entity, and anything with only incidental mentions
+    is flagged rather than credited to whoever happened to name it.
 - **2026-07-22 — Cisco publishes an OpenAPI spec, and it changes how this project works.**
   `webex/webex-openapi-specs` → `public-spec/webex-contact-center.json`: **448 operations,
   327 paths, 756 schemas**, OpenAPI 3.0.0, updated roughly weekly (15 commits since
