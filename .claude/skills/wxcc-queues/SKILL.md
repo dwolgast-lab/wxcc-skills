@@ -44,6 +44,38 @@ Fields observed live (2026-07-10): `name`, `active`, `channelType`, `queueType`,
 `queueSkillRequirements`, recording/monitoring permission booleans, `timezone`.
 Tenant-observed, not contract.
 
+## "Which queues does this agent serve?" — `wxcc_find_queues`
+
+There is no filter for this on `wxcc_list`; each routing type has its own route.
+`wxcc_find_queues(by="")` lists them.
+
+| Goal | Call |
+|---|---|
+| Via the agent's **team** | `wxcc_find_queues(by="team_based_for_user", user_id="...")` |
+| Assigned **individually** | `wxcc_find_queues(by="agent_based_for_user", user_id="...")` |
+| Matched by **skill** | `wxcc_find_queues(by="skill_based_for_user", user_id="...")` |
+| Queues a skill profile serves | `wxcc_find_queues(by="for_skill_profile", skill_profile_id="...")` |
+| One user under one skill profile | `wxcc_find_queues(by="for_user_and_skill_profile", user_id=..., skill_profile_id=...)` |
+| Narrowed by dynamic skills | `wxcc_find_queues(by="for_dynamic_skills", skill_profile_id=..., dynamic_skills=[...])` |
+
+**Routing types are not exclusive.** A user can be reached through more than one, so an
+empty result from one lookup does **not** mean they serve no queues — run the other two
+per-user lookups before telling anyone that. The tool repeats this in every response.
+
+These routes return a **slim record** — `id`, `name`, `routingPattern` — not the full
+queue. Call `wxcc_get` on the id for the rest. Note `routingPattern` describes the queue,
+so a queue returned by the *team-based* lookup can still read `SKILLS_BASED`.
+
+**Not exposed, and why** (both probed 2026-07-22):
+- `fetch-manually-assignable-queues` — **404 for all six users tried**, each with a valid
+  `ciUserId` taken straight from their record. Unexplained, so it is refused rather than
+  shipped as flaky.
+- `fetch-by-grouped-assistant-skill` — **412 "License check failed for Suggested
+  responses"**. Entitlement-gated; a tenant with that license may differ.
+- `POST v2/contact-service-queue/{id}/reassign-agents` — adds/removes agents on an
+  **agent-based** queue. **Unverifiable here: this tenant has no agent-based queues** (all
+  are INBOUND/OUTBOUND), so it stays refused rather than shipped untested.
+
 ## Traps
 
 | Trap | Why | Do this |

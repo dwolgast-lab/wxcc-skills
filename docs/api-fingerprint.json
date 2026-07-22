@@ -3,7 +3,7 @@
   "spec_url": "https://raw.githubusercontent.com/webex/webex-openapi-specs/main/public-spec/webex-contact-center.json",
   "upstream_commit": "2a282a07cedeb2203400e27969adb1554c46148c",
   "upstream_committed": "2026-07-22T15:06:57Z",
-  "captured": "2026-07-22T19:47:14Z",
+  "captured": "2026-07-22T21:39:01Z",
   "operation_count": 448,
   "routes": [
     "DELETE /admin/v1/api/journey-actions/workspace-id/{workspaceId}/template-id/{templateId}/action-id/{actionId}",

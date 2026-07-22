@@ -138,6 +138,18 @@ FINDERS = {
     ("user", None, "/by-call-monitoring-id/{id}", "GET"): "wxcc_find_users(by='call_monitoring_id')",
     ("user", None, "/fetch-user-details-by-ids", "POST"): "wxcc_find_users(by='ids')",
     ("user", None, "/fetch-by-skill-requirements", "POST"): "wxcc_find_users(by='skill_requirements')",
+    ("contact-service-queue", "v2", "/by-user-id/{userid}/team-based-queues", "GET"):
+        "wxcc_find_queues(by='team_based_for_user')",
+    ("contact-service-queue", "v2", "/by-user-id/{userid}/agent-based-queues", "GET"):
+        "wxcc_find_queues(by='agent_based_for_user')",
+    ("contact-service-queue", "v2", "/by-user-id/{userid}/skill-based-queues", "GET"):
+        "wxcc_find_queues(by='skill_based_for_user')",
+    ("contact-service-queue", None, "/by-skill-profile-id/{id}", "GET"):
+        "wxcc_find_queues(by='for_skill_profile')",
+    ("contact-service-queue", None, "/fetch-by-userId-skillProfileId", "POST"):
+        "wxcc_find_queues(by='for_user_and_skill_profile')",
+    ("contact-service-queue", None, "/fetch-by-dynamic-skills-and-skillProfile", "POST"):
+        "wxcc_find_queues(by='for_dynamic_skills')",
 }
 
 PURGE = ("403 tenant-wide for a full-rights admin (confirmed on auxiliary-code, "
@@ -163,6 +175,15 @@ def refusal(ent: str, ver, tail: str, meth: str) -> str | None:
                 "skillProfileId via wxcc_update.")
     if ent == "user" and ver == "v2" and tail == "/by-ci-user-id/{id}":
         return "Duplicate of the non-v2 route, which is the one wxcc_find_users calls."
+    if ent == "contact-service-queue" and tail == "/fetch-manually-assignable-queues":
+        return ("404 for all six users tried, each with a valid ciUserId from their own "
+                "record (2026-07-22). Unexplained, so refused rather than shipped flaky.")
+    if ent == "contact-service-queue" and tail == "/fetch-by-grouped-assistant-skill":
+        return "412 'License check failed for Suggested responses' - entitlement-gated."
+    if ent == "contact-service-queue" and tail.endswith("/reassign-agents"):
+        return ("Operates on AGENT-BASED queues; this tenant has none (all INBOUND/"
+                "OUTBOUND), so it cannot be verified. Refused rather than shipped "
+                "untested.")
     if tail.endswith("/entry/bulk"):
         return ("Route confirmed (207 + items) but its accepted ops are UNPROBED, so "
                 "the bulk tools refuse it.")

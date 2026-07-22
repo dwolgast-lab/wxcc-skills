@@ -334,11 +334,12 @@ resolves to in your shell — **not** the MCP server you were just talking to.
 | Tool | Covers |
 |---|---|
 | `wxcc_whoami` | Which tenant am I actually on? Scopes, org, live read check |
-| `wxcc_list` / `wxcc_get` | Read any of 22 entities |
+| `wxcc_list` / `wxcc_get` | Read any of 23 entities |
 | `wxcc_references` | What points **at** this object — the delete pre-flight, asked on its own, about something you intend to keep |
 | `wxcc_create` / `wxcc_update` / `wxcc_delete` | Write one object, with dry-run + verify + reference-blocking |
 | `wxcc_bulk_update` / `wxcc_bulk_create` / `wxcc_bulk_delete` | Write **many** objects of one entity in a single call, per-item 207 results — 19 entities, but **which of create/update/delete each supports differs sharply** and the tool refuses an unverified pair |
 | `wxcc_list_entries` / `wxcc_add_entry` / `wxcc_update_entry` / `wxcc_remove_entry` | One entry at a time inside an address-book or outdial-ani |
+| `wxcc_find_queues` | Which queues an agent actually serves — one route per routing type, and they are not exclusive |
 | `wxcc_find_users` | The seven user lookups `wxcc_list` cannot express — users joined to their profile, Control Hub id → CC user, who holds a dynamic skill, agents matching skill criteria |
 | `wxcc_search_tasks` | Calls/tasks/agent sessions (GraphQL) |
 | `wxcc_webhooks` | Event types + subscription CRUD |

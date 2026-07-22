@@ -5,7 +5,7 @@
 
 Cisco's OpenAPI spec ([`webex-contact-center.json`](https://github.com/webex/webex-openapi-specs/blob/main/public-spec/webex-contact-center.json)) diffed against this project's entity registry.
 
-Upstream commit **`2a282a07cede`** (2026-07-22T15:06:57Z) · registry has **22 entities**.
+Upstream commit **`2a282a07cede`** (2026-07-22T15:06:57Z) · registry has **23 entities**.
 
 > **The spec maps what EXISTS, not what WORKS.** It declares `application/json` as an accepted body for `POST`/`PUT` on `audio-file`; live probing shows every JSON shape returns 500 and only multipart succeeds. Schema quality is uneven too - `PATCH user/{id}` documents its body as `JsonValue` with one field. **Where the spec and a live probe disagree, the probe wins**, and the probe's finding belongs in the registry note.
 
@@ -16,11 +16,11 @@ Upstream commit **`2a282a07cede`** (2026-07-22T15:06:57Z) · registry has **22 e
 | Operations in spec | 448 |
 | Org-scoped config operations | 288 |
 | Non-org-scoped (Tasks/Flows/Journey/…) | 160 |
-| Config path roots — registered | 22 |
-| Config path roots — not registered | 7 |
-| Ops on registered entities | 236 |
-| — reachable by a tool | **194** |
-| — gaps | **42** |
+| Config path roots — registered | 23 |
+| Config path roots — not registered | 6 |
+| Ops on registered entities | 249 |
+| — reachable by a tool | **210** |
+| — gaps | **39** |
 
 ## Registered entities
 
@@ -50,6 +50,24 @@ Upstream commit **`2a282a07cede`** (2026-07-22T15:06:57Z) · registry has **22 e
 | PUT | `address-book/{id}` | Update specific Address Book by ID | `wxcc_update` |
 | PUT | `v3/address-book/{id}` | Update specific Address Book by ID | `wxcc_update` |
 | GET | `address-book/{id}/incoming-references` | List references for a specific Address Book | `wxcc_references` |
+
+### `agent-personal-greeting` — 10/13 reachable
+
+| Method | Path | Summary | Tool / status |
+|---|---|---|---|
+| GET | `v2/agent-personal-greeting` | List Greeting Files | `wxcc_list` |
+| GET | `v3/agent-personal-greeting` | List Greeting Files | `wxcc_list` |
+| POST | `agent-personal-greeting` | Create a new Greeting File | `wxcc_create` |
+| POST | `v2/agent-personal-greeting` | Create a new Greeting File | `wxcc_create` |
+| POST | `agent-personal-greeting/delete-reference` | Delete references of an agent from greeting files | **GAP** |
+| DELETE | `agent-personal-greeting/{id}` | Delete specific Greeting File by ID | `wxcc_delete` |
+| DELETE | `v2/agent-personal-greeting/{id}` | Delete specific Greeting File by ID | `wxcc_delete` |
+| GET | `agent-personal-greeting/{id}` | Get specific Greeting File by ID | `wxcc_get` |
+| GET | `v2/agent-personal-greeting/{id}` | Get specific Greeting File by ID | `wxcc_get` |
+| PATCH | `agent-personal-greeting/{id}` | Partially update Greeting File by ID | **GAP** |
+| PATCH | `v2/agent-personal-greeting/{id}` | Partially update Greeting File by ID | **GAP** |
+| PUT | `agent-personal-greeting/{id}` | Update specific Greeting File by ID | `wxcc_update` |
+| PUT | `v2/agent-personal-greeting/{id}` | Update specific Greeting File by ID | `wxcc_update` |
 
 ### `agent-profile` — 8/9 reachable
 
@@ -134,7 +152,7 @@ Upstream commit **`2a282a07cede`** (2026-07-22T15:06:57Z) · registry has **22 e
 | GET | `contact-number/{id}` | Get specific Contact Number by ID | `wxcc_get` |
 | PUT | `contact-number/{id}` | Update specific Contact Number by ID | `wxcc_update` |
 
-### `contact-service-queue` — 12/23 reachable
+### `contact-service-queue` — 18/23 reachable
 
 | Method | Path | Summary | Tool / status |
 |---|---|---|---|
@@ -144,15 +162,15 @@ Upstream commit **`2a282a07cede`** (2026-07-22T15:06:57Z) · registry has **22 e
 | POST | `v2/contact-service-queue` | Create a new Contact Service Queue | `wxcc_create` |
 | PATCH | `contact-service-queue/bulk` | Bulk partial update Contact Service Queues | `wxcc_bulk_update` |
 | POST | `contact-service-queue/bulk` | Bulk save Contact Service Queues | `wxcc_bulk_create/delete` |
-| GET | `contact-service-queue/by-skill-profile-id/{id}` | List skill-based Contact Service Queues by skill profile ID (public) | **GAP** |
-| GET | `v2/contact-service-queue/by-user-id/{userid}/agent-based-queues` | List agent-based Contact Service Queues by user ID | **GAP** |
-| GET | `v2/contact-service-queue/by-user-id/{userid}/skill-based-queues` | List skill-based Contact Service Queues by user ID | **GAP** |
-| GET | `v2/contact-service-queue/by-user-id/{userid}/team-based-queues` | List team-based Contact Service Queues by user ID | **GAP** |
+| GET | `contact-service-queue/by-skill-profile-id/{id}` | List skill-based Contact Service Queues by skill profile ID (public) | `wxcc_find_queues(by='for_skill_profile')` |
+| GET | `v2/contact-service-queue/by-user-id/{userid}/agent-based-queues` | List agent-based Contact Service Queues by user ID | `wxcc_find_queues(by='agent_based_for_user')` |
+| GET | `v2/contact-service-queue/by-user-id/{userid}/skill-based-queues` | List skill-based Contact Service Queues by user ID | `wxcc_find_queues(by='skill_based_for_user')` |
+| GET | `v2/contact-service-queue/by-user-id/{userid}/team-based-queues` | List team-based Contact Service Queues by user ID | `wxcc_find_queues(by='team_based_for_user')` |
 | POST | `contact-service-queue/delete-reference` | Delete references from Contact Service Queues | **GAP** |
-| POST | `contact-service-queue/fetch-by-dynamic-skills-and-skillProfile` | List skill-based Contact Service Queues by dynamic skills and skill profile | **GAP** |
-| POST | `v2/contact-service-queue/fetch-by-grouped-assistant-skill` | List queue mapping summary grouped by Assistant Skill | **GAP** |
-| POST | `contact-service-queue/fetch-by-userId-skillProfileId` | List skill-based Contact Service Queues by skill profile ID and user ID | **GAP** |
-| POST | `contact-service-queue/fetch-manually-assignable-queues` | List manually assignable Contact Service Queues | **GAP** |
+| POST | `contact-service-queue/fetch-by-dynamic-skills-and-skillProfile` | List skill-based Contact Service Queues by dynamic skills and skill profile | `wxcc_find_queues(by='for_dynamic_skills')` |
+| POST | `v2/contact-service-queue/fetch-by-grouped-assistant-skill` | List queue mapping summary grouped by Assistant Skill | **decided** — 412 'License check failed for Suggested responses' - entitlement-gated. |
+| POST | `contact-service-queue/fetch-by-userId-skillProfileId` | List skill-based Contact Service Queues by skill profile ID and user ID | `wxcc_find_queues(by='for_user_and_skill_profile')` |
+| POST | `contact-service-queue/fetch-manually-assignable-queues` | List manually assignable Contact Service Queues | **decided** — 404 for all six users tried, each with a valid ciUserId from their own record (2026-07-22). Unexplained, so refused rather than shipped flaky. |
 | POST | `contact-service-queue/purge-inactive-entities` | Purge inactive Contact Service Queues | **decided** — 403 tenant-wide for a full-rights admin (confirmed on auxiliary-code, desktop-layout and agent-profile 2026-07-22). Use wxcc_bulk_delete on ids you chose. |
 | POST | `contact-service-queue/v2/bulk` | Bulk save Contact Service Queues | `wxcc_bulk_create/delete` |
 | DELETE | `contact-service-queue/{id}` | Delete specific Contact Service Queue by ID | `wxcc_delete` |
@@ -160,7 +178,7 @@ Upstream commit **`2a282a07cede`** (2026-07-22T15:06:57Z) · registry has **22 e
 | GET | `v2/contact-service-queue/{id}` | Get specific Contact Service Queue by ID | `wxcc_get` |
 | PUT | `v2/contact-service-queue/{id}` | Update specific Contact Service Queue by ID | `wxcc_update` |
 | GET | `contact-service-queue/{id}/incoming-references` | List references for a specific Contact Service Queue | `wxcc_references` |
-| POST | `v2/contact-service-queue/{id}/reassign-agents` | Add or remove agents/users to/from an agent based queue | **GAP** |
+| POST | `v2/contact-service-queue/{id}/reassign-agents` | Add or remove agents/users to/from an agent based queue | **decided** — Operates on AGENT-BASED queues; this tenant has none (all INBOUND/OUTBOUND), so it cannot be verified. Refused rather than shipped untested. |
 
 ### `desktop-layout` — 7/8 reachable
 
@@ -383,24 +401,6 @@ Upstream commit **`2a282a07cede`** (2026-07-22T15:06:57Z) · registry has **22 e
 | GET | `v2/agent-burnout` | List Agent Burnout resource(s) |
 | GET | `agent-burnout/{id}` | Get specific Agent Burnout resource by ID |
 | PUT | `agent-burnout/{id}` | Update specific Agent Burnout resource by ID |
-
-### `agent-personal-greeting` — 13 operations (Agent Personal Greeting Files)
-
-| Method | Path | Summary |
-|---|---|---|
-| GET | `v2/agent-personal-greeting` | List Greeting Files |
-| GET | `v3/agent-personal-greeting` | List Greeting Files |
-| POST | `agent-personal-greeting` | Create a new Greeting File |
-| POST | `v2/agent-personal-greeting` | Create a new Greeting File |
-| POST | `agent-personal-greeting/delete-reference` | Delete references of an agent from greeting files |
-| DELETE | `agent-personal-greeting/{id}` | Delete specific Greeting File by ID |
-| DELETE | `v2/agent-personal-greeting/{id}` | Delete specific Greeting File by ID |
-| GET | `agent-personal-greeting/{id}` | Get specific Greeting File by ID |
-| GET | `v2/agent-personal-greeting/{id}` | Get specific Greeting File by ID |
-| PATCH | `agent-personal-greeting/{id}` | Partially update Greeting File by ID |
-| PATCH | `v2/agent-personal-greeting/{id}` | Partially update Greeting File by ID |
-| PUT | `agent-personal-greeting/{id}` | Update specific Greeting File by ID |
-| PUT | `v2/agent-personal-greeting/{id}` | Update specific Greeting File by ID |
 
 ### `ai-feature` — 8 operations (AI Feature)
 

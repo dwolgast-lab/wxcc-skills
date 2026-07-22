@@ -8,7 +8,7 @@ description: Use when EXTENDING this project rather than administering a tenant 
 
 # wxcc-api-map — where everything lives
 
-Generated from Cisco's OpenAPI spec (upstream `2a282a07cede`, 2026-07-22T15:06:57Z) against a registry of **22 entities**. **194/236** operations on registered entities are reachable.
+Generated from Cisco's OpenAPI spec (upstream `2a282a07cede`, 2026-07-22T15:06:57Z) against a registry of **23 entities**. **210/249** operations on registered entities are reachable.
 
 **This is an index, not a manual.** It says what exists and who owns the detail. Every trap, field rule and payload shape lives in the entity's skill and in the `ENTITIES` note in [mcp_server.py](../../../mcp_server.py) - one home per fact. Do not copy those here.
 
@@ -36,13 +36,14 @@ Cross-cutting skills are omitted from the rows below because they speak about ev
 | Entity | Ops (reachable/total) | Skills that own the detail |
 |---|---|---|
 | `address-book` | 17/19 | **wxcc-address-books** |
+| `agent-personal-greeting` | 10/13 | **wxcc-agent-greetings** |
 | `agent-profile` | 8/9 | **wxcc-desktop-profiles** |
 | `audio-file` | 7/7 | **wxcc-audio-files** |
 | `auxiliary-code` | 9/11 | **wxcc-aux-codes** |
 | `business-hours` | 8/8 | **wxcc-business-hours** |
-| `cad-variable` | 7/10 | **NO OWNING SKILL** — only mentioned by _wxcc-resource-collections_ |
+| `cad-variable` | 7/10 | **wxcc-global-variables** |
 | `contact-number` | 6/8 | **wxcc-contact-numbers** |
-| `contact-service-queue` | 12/23 | **wxcc-queues**, **wxcc-queues-write** |
+| `contact-service-queue` | 18/23 | **wxcc-queues**, **wxcc-queues-write** |
 | `desktop-layout` | 7/8 | **wxcc-desktop-layouts** |
 | `dial-number` | 8/12 | **wxcc-entry-points**, **wxcc-entry-points-write** |
 | `entry-point` | 8/10 | **wxcc-entry-points**, **wxcc-entry-points-write** |
@@ -58,8 +59,6 @@ Cross-cutting skills are omitted from the rows below because they speak about ev
 | `user` | 14/17 | **wxcc-users**, **wxcc-users-write** |
 | `user-profile` | 7/8 | **wxcc-user-profiles** |
 
-> **1 registered entity has no owning skill**: `cad-variable`. The tools reach it, but nothing tells a caller how or warns about its traps. A skill that merely names an entity in a list is not its owner.
-
 ## Config roots with no registry entry
 
 Candidates for the next entity, with their operation counts. Full route lists in [docs/api-coverage.md](../../../docs/api-coverage.md).
@@ -67,7 +66,6 @@ Candidates for the next entity, with their operation counts. Full route lists in
 | Root | Ops | Note |
 |---|---|---|
 | `agent-burnout` | 3 | Unregistered and unprobed. |
-| `agent-personal-greeting` | 13 | Unregistered and unprobed. |
 | `ai-feature` | 8 | Unregistered and unprobed. |
 | `auto-csat` | 8 | Unregistered and unprobed. |
 | `dial-plan` | 8 | **Deprecated** in WxCC - the `agent-profile` fields that reference it are ignored. |

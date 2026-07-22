@@ -484,6 +484,37 @@ ENTITIES: dict[str, dict[str, Any]] = {
                 "description. All verified live 2026-07-22 via a full create/read/patch/"
                 "put/delete round trip.",
     },
+    "agent-personal-greeting": {
+        "list": "v2/agent-personal-greeting", "item": "agent-personal-greeting/{id}",
+        "create": ["name", "contentType", "agentId", "greetingPurposeId"],
+        "writes": ["create", "update", "delete"],
+        "upload": {
+            "field": "audioFile", "info_field": "agentPersonalGreetingInfo",
+            "file_type": "audio/wav",
+        },
+        # Every write carries the audio, so a metadata-only update has no route:
+        # JSON PUT is 500 and PATCH is a nameless 409. Force file_path.
+        "update_requires_file": True,
+        # Same defect as contact-number: 400 "specify a valid external entity type".
+        "no_incoming_references": True,
+        "note": "PER-AGENT greeting recordings - NOT the tenant's shared prompts, which "
+                "are `audio-file`. Each one binds to an agent via `agentId` AND to a "
+                "greeting purpose via `greetingPurposeId`. THE PURPOSE ID IS THE WHOLE "
+                "TRICK: omit it and create fails with a nameless 409 'Internal error. "
+                "Please contact Cisco Support Team' that names nothing. Get it from "
+                "`GET v2/greeting-purpose` - A ROUTE THAT IS ABSENT FROM CISCO'S OWN "
+                "OpenAPI SPEC (the spec publishes only agent-personal-greeting/*), so it "
+                "cannot be discovered from the docs at all. Every write is "
+                "multipart/form-data: the spec claims application/json is accepted and it "
+                "is NOT (bare 500), exactly like audio-file. Update is a multipart PUT "
+                "carrying the existing blobId forward - there is NO metadata-only update, "
+                "because PATCH answers the same nameless 409, so wxcc_update demands "
+                "file_path here. Item path works with AND without the v2 prefix; v3 lists "
+                "but has no item path (404). incoming-references is BROKEN for this entity "
+                "(400 'specify a valid external entity type'), so deletes are not "
+                "pre-flighted. All verified live 2026-07-22 through create/read/put/delete "
+                "round trips, baseline 0 restored.",
+    },
     "resource-collection": {
         "list": "v2/resource-collection", "item": "resource-collection/{id}",
         "create": ["name", "resources"],
@@ -965,16 +996,20 @@ def wxcc_create(entity: str, fields: dict, confirm: bool = False,
         return {"refused": f"create is not supported/proven for {entity}",
                 "why": spec.get("note", "")}
 
+    # Report BOTH problems at once. Checking the file first hid the missing fields,
+    # so a caller who omitted everything had to fix one thing, retry, and be told
+    # about the next.
     upload = spec.get("upload")
-    if upload and not file_path:
-        return {"error": f"{entity} carries a file - pass file_path=<absolute path "
-                         "to the .wav on this machine>.", "note": spec.get("note")}
-
     missing = [f for f in spec.get("create", []) if f not in fields]
-    if missing:
-        return {"error": "missing required fields (the API would return a 400 "
-                         "naming these)", "missing": missing,
-                "required": spec.get("create"), "note": spec.get("note")}
+    if missing or (upload and not file_path):
+        return {
+            "error": "cannot create yet",
+            "missing_fields": missing or None,
+            "needs_file": (f"{entity} carries a file - pass file_path=<absolute path "
+                           "to the .wav on this machine>.")
+                          if upload and not file_path else None,
+            "required": spec.get("create"), "note": spec.get("note"),
+        }
 
     # Entities whose sub-objects carry ids cannot be created from a clone that
     # still holds them. Strip rather than let the caller hit an error that names
@@ -1031,6 +1066,11 @@ def wxcc_update(entity: str, id: str, changes: dict, confirm: bool = False,
                 "why": spec.get("note", "")}
     if file_path and not spec.get("upload"):
         return {"refused": f"{entity} carries no file - file_path is meaningless here."}
+    if spec.get("update_requires_file") and not file_path:
+        return {"refused": f"{entity} has no metadata-only update route - every write "
+                           "carries the audio. Pass file_path=<absolute path to the "
+                           ".wav>, re-uploading the current audio if you only mean to "
+                           "rename it.", "why": spec.get("note", "")}
 
     client = _client()
     current = _read(client, entity, id)
@@ -1718,6 +1758,113 @@ def wxcc_find_users(by: str, value: str = "", values: list | None = None) -> dic
                         "there is no way to tell whether the server truncated it.")
                        if bare else None,
         "what": spec["what"],
+    }
+
+
+# "Which queues does this agent actually serve?" needs a different route per
+# routing type, and none of them is expressible as a wxcc_list filter. Verified
+# live 2026-07-22.
+_QUEUE_FINDERS: dict[str, dict[str, Any]] = {
+    "team_based_for_user": {
+        "path": "v2/contact-service-queue/by-user-id/{v}/team-based-queues",
+        "method": "GET", "needs": "user id",
+        "what": "Queues this user serves because a TEAM they are on is in the queue's "
+                "call-distribution groups.",
+    },
+    "agent_based_for_user": {
+        "path": "v2/contact-service-queue/by-user-id/{v}/agent-based-queues",
+        "method": "GET", "needs": "user id",
+        "what": "Queues this user is assigned to INDIVIDUALLY (agent-based routing).",
+    },
+    "skill_based_for_user": {
+        "path": "v2/contact-service-queue/by-user-id/{v}/skill-based-queues",
+        "method": "GET", "needs": "user id",
+        "what": "Queues this user matches by SKILL.",
+    },
+    "for_skill_profile": {
+        "path": "contact-service-queue/by-skill-profile-id/{v}", "method": "GET",
+        "needs": "skill profile id",
+        "what": "Skill-based queues a given skill profile can serve.",
+    },
+    "for_user_and_skill_profile": {
+        "path": "contact-service-queue/fetch-by-userId-skillProfileId", "method": "POST",
+        "needs": "user id + skill profile id",
+        "what": "Skill-based queues for one user under one skill profile.",
+    },
+    "for_dynamic_skills": {
+        "path": "contact-service-queue/fetch-by-dynamic-skills-and-skillProfile",
+        "method": "POST", "needs": "skill profile id (+ optional dynamic skills)",
+        "what": "Skill-based queues for a skill profile, optionally narrowed by "
+                "dynamic skill values.",
+    },
+}
+
+
+@mcp.tool()
+def wxcc_find_queues(by: str, user_id: str = "", skill_profile_id: str = "",
+                     dynamic_skills: list | None = None) -> dict:
+    """Which queues does this agent serve? Read-only.
+
+    Routing type decides the route, so ask the right one - or ask all three
+    per-user lookups, because a user can be reached through more than one:
+
+      team_based_for_user        user_id           via their team
+      agent_based_for_user       user_id           assigned individually
+      skill_based_for_user       user_id           matched by skill
+      for_skill_profile          skill_profile_id
+      for_user_and_skill_profile user_id + skill_profile_id
+      for_dynamic_skills         skill_profile_id (+ dynamic_skills)
+
+    Call with by="" to list them. For plain listing/filtering use wxcc_list.
+    """
+    if by not in _QUEUE_FINDERS:
+        return {"error": f"unknown lookup {by!r}" if by else "pick a lookup",
+                "lookups": {k: v["what"] for k, v in _QUEUE_FINDERS.items()},
+                "note": "A user can serve queues through MORE THAN ONE routing type. "
+                        "'No results' from one lookup does not mean they serve none - "
+                        "run the other two before telling the user that."}
+
+    spec = _QUEUE_FINDERS[by]
+    client = _client()
+    if spec["method"] == "GET":
+        val = user_id if "by-user-id" in spec["path"] else skill_profile_id
+        if not val:
+            return {"error": f"{by} needs {spec['needs']}", "what": spec["what"]}
+        status, body = client.json("GET", "organization/{orgId}/"
+                                   + spec["path"].replace("{v}", urllib.parse.quote(val)))
+    else:
+        if by == "for_user_and_skill_profile":
+            if not (user_id and skill_profile_id):
+                return {"error": f"{by} needs both user_id and skill_profile_id",
+                        "what": spec["what"]}
+            payload = {"userId": user_id, "skillProfileId": skill_profile_id}
+        else:
+            if not skill_profile_id:
+                return {"error": f"{by} needs skill_profile_id", "what": spec["what"]}
+            payload: dict[str, Any] = {"skillProfileId": skill_profile_id}
+            if dynamic_skills:
+                payload["dynamicSkills"] = dynamic_skills
+        status, body = client.json("POST", "organization/{orgId}/" + spec["path"], payload)
+
+    if status >= 400:
+        return {"found": False, "http": status, "error": body, "what": spec["what"]}
+
+    doc = _as_dict(body) if isinstance(body, dict) else {}
+    records: list = doc["data"] if isinstance(doc.get("data"), list) else (
+        body if isinstance(body, list) else [])
+    return {
+        "tenant": _tenant(client), "lookup": by, "http": status,
+        "count": len(records),
+        # These routes return a SLIM record - id, name, routingPattern - not the full
+        # queue. Pass through what is actually there rather than projecting fields
+        # that would come back null; wxcc_get on the id returns the whole object.
+        "queues": [q for q in records if isinstance(q, dict)],
+        "note_on_shape": "Slim records (id, name, routingPattern). For the full queue "
+                         "call wxcc_get(entity='contact-service-queue', id=...).",
+        "meta": doc.get("meta"),
+        "what": spec["what"],
+        "reminder": "Routing types are not exclusive - check the other per-user "
+                    "lookups before reporting that a user serves no queues.",
     }
 
 

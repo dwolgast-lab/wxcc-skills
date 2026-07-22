@@ -3,6 +3,45 @@
 Notable changes to the wxcc-skills library. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); entries are dated, newest first.
 
+- **2026-07-22 — `agent-personal-greeting`, queue lookups, and the Global Variables skill.**
+  Entities **23**, tools **18**, skills **30**. Coverage **210/249**. All verified live.
+  - **THE SPEC IS INCOMPLETE, not merely wrong.** Creating a greeting file kept returning a
+    nameless `409 "Internal error. Please contact Cisco Support Team"`. The missing field
+    was `greetingPurposeId`, and the only way to get one is **`GET v2/greeting-purpose` — a
+    route that does not appear anywhere in Cisco's published OpenAPI spec**, which lists
+    only `agent-personal-greeting/*`. Until now the spec's failure mode was "says JSON works
+    when it does not"; this is a whole route missing. **Absence from the spec is not
+    evidence of absence in the API.**
+  - **`agent-personal-greeting`** (per-agent greetings, NOT the shared `audio-file` prompts)
+    is registered with create/update/delete, all multipart — a JSON body is a bare 500, the
+    same lie as `audio-file`. There is **no metadata-only update**: `PATCH` returns the same
+    nameless 409, so renaming means re-uploading the audio, and `wxcc_update` now refuses
+    without `file_path` rather than letting a rename silently do nothing. Its
+    `incoming-references` is **broken exactly like `contact-number`** (400 "specify a valid
+    external entity type"), so deletes carry `REFERENCES_NOT_CHECKED`. Item path works with
+    and without `v2`; `v3` lists but has no item path.
+  - **New `wxcc_find_queues`** answers "which queues does this agent serve?" — six routes,
+    because each routing type has its own. **Routing types are not exclusive**, so the tool
+    repeats in every response that an empty result from one lookup does not mean the user
+    serves no queues. The records are **slim** (`id`, `name`, `routingPattern`); the tool
+    passes through what is actually there rather than projecting `queueType`/`channelType`,
+    which came back null in the first cut.
+  - **Three queue routes refused, each for a stated reason:**
+    `fetch-manually-assignable-queues` **404s for all six users tried**, each with a valid
+    `ciUserId` from their own record; `fetch-by-grouped-assistant-skill` is **412 "License
+    check failed for Suggested responses"**; and `reassign-agents` **cannot be verified
+    here at all — this tenant has no agent-based queues**, so it is refused rather than
+    shipped untested.
+  - **New `wxcc-global-variables`** closes the orphan the generated index found yesterday:
+    `cad-variable` had full CRUD and bulk but no skill. Its `variableType` enum publishes
+    **every value twice, in two casings** (`STRING` and `String`); the tenant uses
+    TitleCase, and whether the two are interchangeable on write is unverified. Global
+    variables are **referenced by flows** — and while delete is reference-blocked, **rename
+    is not**, so renaming a referenced variable breaks the flow at runtime.
+  - **`wxcc_create` now reports every problem at once.** It used to check the file before
+    the required fields, so a caller who omitted both fixed one, retried, and was told about
+    the next. One flipped test in the audio suite was traced to this deliberate shape change
+    (`error` → `needs_file`), not a regression, and the assertion was updated.
 - **2026-07-22 — The API reference is now generated, with drift detection.**
   `scripts/build_api_reference.py` fetches Cisco's live spec, merges it with the `ENTITIES`
   registry, and emits three artifacts. Skills reach **28**.
