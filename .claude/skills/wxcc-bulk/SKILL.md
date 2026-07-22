@@ -65,11 +65,25 @@ an op an entity hasn't been proven to support. As of 2026-07-21:
 | `contact-number` | ✅ | ❌ | ✅ | no bulk update, same 400; `number` only, max 9 chars |
 | `resource-collection` | ❌ | ✅ RMW | ❌ | **update only, and on PATCH**; create → 500 "no mapping for id", delete → 400 "SAVE only" |
 
-**`address-book` and `user` have no bulk route at all** — confirmed, not merely unprobed.
-`address-book/bulk` answers identically to `address-book/<any-garbage-id>` (POST 405 / PUT 400
-"name: should not be null or blank"), i.e. `bulk` is being parsed as an `{id}`. A *real* bulk
-route answers `POST` with a `207` and an `items` envelope; that is the only reliable test —
-status code alone cannot distinguish them, and neither can the error-body shape.
+### Correction (2026-07-22): "address-book and user have no bulk route at all" was WRONG
+
+That claim shipped here as "confirmed, not merely unprobed." It was false on **both**
+entities. The evidence behind it was sound but probed the wrong path level:
+
+- `address-book/bulk` really does parse `bulk` as an `{id}` (POST 405 / PUT 400 "name: should
+  not be null or blank") — but bulk lives on the **child** collection.
+  `POST address-book/{id}/entry/bulk` → **207 + `items`**. So does
+  `POST outdial-ani/{id}/entry/bulk`.
+- `POST user/bulk` → **207 + `items`** directly. (`v2/user/bulk` and `v3/user/bulk` 404.)
+
+All three re-probed live 2026-07-22. **The routes exist; which ops they accept is still
+unprobed**, so the tools continue to refuse them — extend via the procedure at the bottom of
+this file, don't assume create/update/delete from the route's existence.
+
+The method was right even though the conclusion wasn't: a *real* bulk route answers `POST`
+with a `207` and an `items` envelope; that is the only reliable test — status code alone
+cannot distinguish them, and neither can the error-body shape. **Probe every path level
+(parent, child, `v2`/`v3` variants) before concluding a route is absent.**
 
 ## wxcc_bulk_update — update many objects
 

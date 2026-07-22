@@ -3,6 +3,31 @@
 Notable changes to the wxcc-skills library. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); entries are dated, newest first.
 
+- **2026-07-22 — CORRECTION: two shipped claims about entry/bulk routes were false.** Both had
+  been published here as *confirmed*. Earlier entries below are left as originally written;
+  this entry supersedes them.
+  - ~~"`address-book` and `user` have no bulk route at all — confirmed, not merely
+    unprobed."~~ **Wrong on both.** The evidence was sound but probed only the parent level.
+    Bulk lives on the **child** collection: `POST address-book/{id}/entry/bulk` → **207 +
+    `items`**, likewise `outdial-ani/{id}/entry/bulk`. And `POST user/bulk` → **207 + `items`**
+    directly (`v2`/`v3` variants 404). Routes confirmed; **their accepted ops remain unprobed**,
+    so the bulk tools still refuse all three.
+  - ~~"`GET .../entry` → 405; the child collection has no list endpoint, entries are readable
+    only from the parent."~~ **Wrong.** `GET v2/<parent>/{id}/entry` is a real paginated list
+    (200, `meta.totalRecords`). The 405 came from GETting the non-`v2` **POST-only create**
+    path — the house rule (list carries `v2`, create drops it) holding, not an exception.
+  - **New trap found while correcting:** `GET v3/address-book/{id}` returns 200 but **omits
+    `addressBookEntries`**; the non-`v2` item path embeds them. Modernizing the item read to
+    `v3` would silently empty every entry list.
+  - Fixed in `wxcc-bulk`, `wxcc-address-books`, `wxcc-outdial-ani`, and the `_parent_entries` /
+    `wxcc_list_entries` docstrings. **Behavior unchanged** — `wxcc_list_entries` still reads
+    entries embedded in the parent. That matched the list path exactly on re-check
+    (address-book 4/4, outdial-ani 1/1) but does **not** paginate; moving it to the `v2` list
+    path is a logged follow-up, not done here.
+  - Method lesson, since the tests themselves were fine: probe **every path level** (parent,
+    child, `v2`/`v3`) before recording a route as absent, and never promote "not found at the
+    one level I tried" to "confirmed absent."
+
 - **Four new entities — the scheduling family plus `contact-number` — taking the registry to
   21, and `wxcc.py` to zero type errors.** All verified live on the sandbox 2026-07-21 through
   full create/read/update/delete round trips; every probe object was deleted and a sweep across

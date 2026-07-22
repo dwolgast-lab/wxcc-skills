@@ -1017,7 +1017,18 @@ def _child_path(entity: str, parent_id: str, child_id: str | None = None) -> str
 
 
 def _parent_entries(client: wxcc.WxccClient, entity: str, parent_id: str) -> list:
-    """Entries are readable only from the parent - GET on the child collection 405s."""
+    """Read the entries embedded in the parent object.
+
+    NOT because the child collection lacks a list - an earlier comment here said
+    that and was wrong (corrected 2026-07-22). `GET v2/<parent>/{id}/entry` is a
+    real paginated list (200); the 405 that prompted the wrong conclusion was a
+    GET against the non-v2 POST-only CREATE path.
+
+    This parent read agreed with the list path exactly when re-checked
+    (address-book 4/4, outdial-ani 1/1, 2026-07-22) but it does NOT paginate.
+    FOLLOW-UP: move to `v2/<parent>/{id}/entry` with paging before anyone points
+    the entry tools at a book big enough to truncate.
+    """
     parent = _read(client, entity, parent_id)
     for key in ("addressBookEntries", "outdialANIEntries", "entries"):
         if isinstance(parent.get(key), list):
@@ -1029,7 +1040,8 @@ def _parent_entries(client: wxcc.WxccClient, entity: str, parent_id: str) -> lis
 def wxcc_list_entries(entity: str, parent_id: str) -> dict:
     """List the entries inside one address-book or outdial-ani.
 
-    Read from the parent object: the child collection has no GET (405).
+    Reads them embedded in the parent object, which does not paginate - see
+    _parent_entries. A very large book may therefore under-report.
     """
     _child_spec(entity)
     client = _client()

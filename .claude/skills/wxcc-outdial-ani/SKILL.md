@@ -83,7 +83,8 @@ be auto-verified. Read the `actual` list back.)
 |---|---|
 | **Number ownership is not validated at create** | The API accepted a fictional number (observed live). Presenting an ANI the tenant does not own is a **compliance problem, not an API error** — it will fail or misbehave on real calls. Confirm the number is entitled before creating. |
 | Endpoints absent from Cisco's Postman collection | The collection has GET only; create/update/delete and the whole entry sub-resource were found by probing and verified live. Absence from samples ≠ absence from API. |
-| `GET .../entry` | **405** — the child collection has no list endpoint. Read entries from the parent (`wxcc_list_entries` does this). |
+| `GET .../entry` → 405 is the CREATE path, not a missing list | **Corrected 2026-07-22.** `GET v2/outdial-ani/{id}/entry` is the real, paginated entry **list** (200). The non-`v2` `outdial-ani/{id}/entry` is POST-only **create**, so a GET there 405s — an earlier note here misread that as "the child collection has no list endpoint." `wxcc_list_entries` still reads from the parent; that matched the list path (1 of 1) but does not paginate. |
+| Entry-level bulk exists | `POST outdial-ani/{id}/entry/bulk` → **207 + `items`** (verified 2026-07-22). Which ops it accepts is unprobed, so the bulk tools still refuse it. |
 | Replacing `outdialANIEntries` wholesale | Omitting an entry **deletes** it; a kept entry without its `id` gives **409**. Use the entry tools instead. |
 | The API reorders entries | Sent `[A, B]`, got `[B, A]`. Never depend on order. |
 | Deleting a referenced ANI | Untested (**candidate/danger**). Check no Desktop Profile points at it (`outdialANIId`) first. |
@@ -92,8 +93,9 @@ be auto-verified. Read the `actual` list back.)
 ## Provenance and maintenance
 
 Reads, create (201), and delete (204) run live on a us1 sandbox 2026-07-11. Parent update
-(200) and the entry sub-resource (POST 201 / PUT 200 / DELETE 204, `GET .../entry` → 405)
-probed and verified 2026-07-16, each confirmed by re-reading the parent; the
+(200) and the entry sub-resource (POST 201 / PUT 200 / DELETE 204) probed and verified
+2026-07-16, each confirmed by re-reading the parent; the `v2` entry-list path and the
+entry-level bulk route were probed live 2026-07-22 (read-only). The
 full-replace hazards on the parent array (omission deletes, kept entry without its `id` →
 409) were each reproduced. Probe objects deleted, baseline of 2 lists restored.
 
