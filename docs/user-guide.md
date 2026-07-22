@@ -339,8 +339,12 @@ resolves to in your shell — **not** the MCP server you were just talking to.
 | `wxcc_create` / `wxcc_update` / `wxcc_delete` | Write one object, with dry-run + verify + reference-blocking |
 | `wxcc_bulk_update` / `wxcc_bulk_create` / `wxcc_bulk_delete` | Write **many** objects of one entity in a single call, per-item 207 results — 19 entities, but **which of create/update/delete each supports differs sharply** and the tool refuses an unverified pair |
 | `wxcc_list_entries` / `wxcc_add_entry` / `wxcc_update_entry` / `wxcc_remove_entry` | One entry at a time inside an address-book or outdial-ani |
+| `wxcc_find_users` | The seven user lookups `wxcc_list` cannot express — users joined to their profile, Control Hub id → CC user, who holds a dynamic skill, agents matching skill criteria |
 | `wxcc_search_tasks` | Calls/tasks/agent sessions (GraphQL) |
 | `wxcc_webhooks` | Event types + subscription CRUD |
+
+Which of these actually reach Cisco's published API, operation by operation, is generated
+into **[api-coverage.md](api-coverage.md)** from the vendor's own OpenAPI spec.
 
 Entities: `user`, `team`, `site`, `contact-service-queue`, `entry-point`, `dial-number`,
 `skill`, `skill-profile`, `auxiliary-code`, `address-book`, `outdial-ani`, `agent-profile`

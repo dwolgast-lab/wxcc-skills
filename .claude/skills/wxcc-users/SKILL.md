@@ -38,6 +38,32 @@ Fields observed live (2026-07-10): `firstName`, `lastName`, `email`, `active`,
 `multimediaProfileId`, `userProfileId`, `userLevelSummariesInclusion`. Tenant-observed,
 not contract.
 
+## Lookups `wxcc_list` cannot express — `wxcc_find_users`
+
+Seven purpose-built routes, all read-only, all verified live 2026-07-22. Call
+`wxcc_find_users(by="")` to have the tool list them.
+
+| Goal | Call |
+|---|---|
+| Every user **joined to its user profile**, one call | `wxcc_find_users(by="with_profile")` |
+| One user joined to its profile | `wxcc_find_users(by="with_profile_by_id", value="USER-ID")` |
+| CC user from a **Control Hub (CI) id** | `wxcc_find_users(by="ci_user_id", value="CI-USER-ID")` |
+| Who carries a **dynamic skill** | `wxcc_find_users(by="dynamic_skill", value="SKILL-ID")` |
+| Details for many users at once | `wxcc_find_users(by="ids", values=["id1","id2"])` |
+| Agents matching skill criteria | `wxcc_find_users(by="skill_requirements", values=[{"skillId":"..."}])` |
+| By call-monitoring id | `wxcc_find_users(by="call_monitoring_id", value="...")` |
+
+Two things to watch:
+
+- **`with_profile` returns a BARE LIST** — no `meta`, no `totalRecords`, no pagination. The
+  tool sets `UNPAGINATED` on the result. There is no way to tell whether the server
+  truncated it, so for a large tenant prefer `wxcc_list` + `wxcc_get` when completeness
+  matters.
+- **`ci_user_id` wants the `ciUserId` field, not the CC `id`.** They are different values on
+  the same record, and passing the wrong one returns a confusing 404.
+- **Dynamic skills are invisible on the user record.** `dynamic_skill` is the only way to
+  see them — a user's assignments will not appear in `wxcc_get`.
+
 ### "Who is on team X?"
 
 There is no server-side filter for this. Two routes:

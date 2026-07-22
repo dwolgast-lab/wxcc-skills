@@ -9,7 +9,7 @@ Claude calls verified WxCC Admin APIs on your behalf.
 
 ## Status
 
-An **MCP server** (16 tools over 22 config entities) plus **27 skills** that route to it.
+An **MCP server** (17 tools over 22 config entities) plus **27 skills** that route to it.
 Every recipe was run against a live tenant before it was written down; anything unverified
 is labeled a *candidate*. Runs locally over stdio, or on **Cloud Run** where the server
 holds no credentials at all and each caller authenticates as themselves.

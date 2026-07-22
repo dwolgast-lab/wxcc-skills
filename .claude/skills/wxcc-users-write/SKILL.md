@@ -42,14 +42,48 @@ Validation, both reproduced live: the target team must be on the **same site** a
 (`400 not found for given site`) and must be **`teamType: AGENT`**
 (`400 Capacity based teams are not allowed`).
 
-## Field writability map (each probed live 2026-07-11)
+## `wxcc_update` on a user is a PATCH, not a PUT (changed 2026-07-22)
+
+`user` has a real single-item `PATCH`, so `wxcc_update` sends **only the fields you name**
+instead of reading the whole object and PUTting it back. Verified live: changing
+`agentProfileId` left `teamIds`, `siteId` and `userProfileId` untouched. **Omitted fields
+are preserved, not nulled.**
+
+This matters because the user record carries fields the API returns on a GET but refuses to
+write — a full-object PUT has to send them back and hope. A PATCH never mentions them.
+
+The body is a **plain partial object**. It is *not* JSON-Patch: an `[{op,path,value}]` array
+returns **500**.
+
+Bulk partial update also works — `wxcc_bulk_update(entity="user", items=[{"id": ...,
+"agentProfileId": ...}])` → 207. There is **no** bulk create or delete, because Control Hub
+owns the user lifecycle.
+
+## Field writability map
 
 | Field | Writable? | Evidence |
 |---|---|---|
-| `teamIds` | YES, validated | 200 on valid change; 400s named above |
-| `firstName` / `lastName` / `email` | **NO** | 400 `This configuration cannot be changed` — identity-owned |
+| `teamIds` | YES, validated | 200 on valid change; 400s named above (2026-07-11) |
+| `agentProfileId` | **YES, confirmed** | changed and restored via PATCH, re-read verified (2026-07-22) |
+| `skillProfileId` | **YES — assign AND clear** | set to a profile, then back to `null`; both 200 and verified (2026-07-22) |
+| `firstName` / `lastName` / `email` | **NO** | 400 `This configuration cannot be changed. Original value is X` — identity-owned |
 | `userLevelSummariesInclusion` | **Silently ignored** | HTTP 200 but unchanged — likely entitlement-gated |
-| `siteId`, `agentProfileId`, `multimediaProfileId`, `userProfileId`, `contactCenterEnabled` | Accepted in a no-op PUT | Individual changes untested — **candidates** |
+| `userLevelAutoCSATInclusion` | **Silently ignored** | Same: 200, unchanged on re-read (2026-07-22) |
+| `siteId`, `multimediaProfileId`, `userProfileId`, `contactCenterEnabled` | Accepted in a no-op write | Individual changes untested — **candidates** |
+
+## Reskilling an agent
+
+Set **`skillProfileId`** with `wxcc_update` — confirmed to both assign and clear.
+
+Do **not** reach for `PATCH user/{id}/reskill`. It exists, but returns **403 "User must have
+a supervisor profile to reskill agents"** — it is a Supervisor Desktop endpoint, not admin
+config, and it is not exposed. Everything it does is reachable through `skillProfileId`.
+
+**Dynamic skills are a separate system** and are *not* on the user record. Assigning them is
+`PATCH user/bulk/update-dynamic-skill/{skillId}` (verified working, `requestAction` `SAVE`
+to add and `DELETE` to remove) — **not currently exposed as a tool**. Read them with
+`wxcc_find_users(by="dynamic_skill", value="SKILL-ID")`. Because they are invisible on the
+user object, a before/after diff of the user record will **not** detect them.
 
 ## The trap this API taught us
 

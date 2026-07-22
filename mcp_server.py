@@ -54,12 +54,32 @@ ENTITIES: dict[str, dict[str, Any]] = {
     "user": {
         "list": "v2/user", "item": "user/{id}",
         "writes": ["update"],
+        # A real single-item PATCH (verified 2026-07-22): a plain partial object,
+        # NOT JSON-Patch (an op/path/value array returns 500). Preferred over the
+        # full-object PUT here because the user record carries fields the API
+        # returns but silently refuses to write.
+        "patch_item": True,
+        "bulk": {
+            "update": {"method": "PATCH", "tail": "user/bulk", "partial": True},
+        },
         "note": "Users are created/deleted in Control Hub, not here. Identity "
-                "fields (firstName/lastName/email) are immutable via this API. "
-                "`userLevelSummariesInclusion` is SILENTLY IGNORED on a 200 (confirmed "
-                "again 2026-07-16 with a valid value) - likely entitlement-gated. Its "
-                "accepted values are EXCLUDED | NOT_APPLICABLE | INCLUDED; anything else "
-                "is a clean 400 naming the enum.",
+                "fields (firstName/lastName/email) are immutable via this API - each "
+                "returns a clean 400 'This configuration cannot be changed. Original "
+                "value is X'. `userLevelSummariesInclusion` is SILENTLY IGNORED on a 200 "
+                "(confirmed again 2026-07-16 with a valid value) - likely "
+                "entitlement-gated; its accepted values are EXCLUDED | NOT_APPLICABLE | "
+                "INCLUDED. `userLevelAutoCSATInclusion` behaves THE SAME WAY (200, value "
+                "unchanged on re-read - verified 2026-07-22), so treat both as "
+                "unwritable until a tenant proves otherwise. Fields that DO change: "
+                "agentProfileId, multimediaProfileId, userProfileId, siteId, teamIds, "
+                "skillProfileId (assign AND clear with null - both 200, verified). "
+                "PATCH user/{id} is a genuine partial - omitted fields are preserved, "
+                "not nulled. BULK is UPDATE-ONLY on PATCH user/bulk (207 + items, "
+                "verified); there is no bulk create/delete because Control Hub owns the "
+                "lifecycle. `PATCH user/{id}/reskill` is NOT exposed: 403 'User must "
+                "have a supervisor profile to reskill agents' - it is a Supervisor "
+                "Desktop endpoint, and everything it does is reachable by PATCHing "
+                "skillProfileId anyway.",
     },
     "team": {
         "list": "v2/team", "item": "team/{id}",
@@ -1594,6 +1614,113 @@ def wxcc_bulk_delete(entity: str, ids: list, confirm: bool = False) -> dict:
 # --------------------------------------------------------------------------- #
 # APIs that do not fit the CRUD registry
 # --------------------------------------------------------------------------- #
+# `user` publishes several purpose-built lookups that wxcc_list cannot express -
+# joins (with-user-profile), foreign-key lookups (Control Hub's ciUserId), and
+# POST-body searches. One tool with a `by` switch rather than six near-identical
+# tools. Every route below was verified live 2026-07-22.
+_USER_FINDERS: dict[str, dict[str, Any]] = {
+    "with_profile": {
+        "path": "user/with-user-profile", "method": "GET", "needs": None,
+        "what": "Every user joined to its user profile, in ONE call. Returns a BARE "
+                "LIST - no meta/data envelope and NO pagination.",
+    },
+    "with_profile_by_id": {
+        "path": "user/with-user-profile/{v}", "method": "GET", "needs": "user id",
+        "what": "One user joined to its user profile.",
+    },
+    "ci_user_id": {
+        "path": "user/by-ci-user-id/{v}", "method": "GET", "needs": "ciUserId",
+        "what": "Find the CC user record from a Control Hub (CI) user id. The value is "
+                "the `ciUserId` field, NOT the CC `id`.",
+    },
+    "dynamic_skill": {
+        "path": "user/by-dynamic-skill-id/{v}", "method": "GET", "needs": "skill id",
+        "what": "Users carrying a given DYNAMIC skill. Dynamic skills live outside the "
+                "user record, so this is the only way to see them.",
+    },
+    "call_monitoring_id": {
+        "path": "user/by-call-monitoring-id/{v}", "method": "GET",
+        "needs": "call monitoring id",
+        "what": "Users by call-monitoring id. NOTE: a plain user id 404s here - this "
+                "wants a call-monitoring id, which nothing else in this server produces.",
+    },
+    "ids": {
+        "path": "user/fetch-user-details-by-ids", "method": "POST", "needs": "list of ids",
+        "what": "Details for a list of user ids, WITH the standard meta/data envelope. "
+                "The API also accepts search+queueId instead of ids (400 'If IDs are "
+                "empty, search string and queue ID must not be empty'), which this tool "
+                "does not expose.",
+    },
+    "skill_requirements": {
+        "path": "user/fetch-by-skill-requirements", "method": "POST",
+        "needs": "list of {skillId,...} requirements",
+        "what": "Agents matching skill criteria. An empty list is 400 'Skill "
+                "requirements cannot be empty'.",
+    },
+}
+
+
+@mcp.tool()
+def wxcc_find_users(by: str, value: str = "", values: list | None = None) -> dict:
+    """Find users through the purpose-built lookups wxcc_list cannot express.
+
+    Read-only. `by` selects the lookup; call with by="" to list them.
+
+      with_profile          - all users joined to their user profile (bare list!)
+      with_profile_by_id    - one user joined to its profile        (value=user id)
+      ci_user_id            - CC user from a Control Hub id         (value=ciUserId)
+      dynamic_skill         - users carrying a dynamic skill        (value=skill id)
+      call_monitoring_id    - users by call-monitoring id           (value=that id)
+      ids                   - details for many users                (values=[ids])
+      skill_requirements    - agents matching skill criteria        (values=[{skillId}])
+
+    For ordinary listing/filtering use wxcc_list; this is for the joins and
+    foreign-key lookups it cannot reach.
+    """
+    if by not in _USER_FINDERS:
+        return {"error": f"unknown lookup {by!r}" if by else "pick a lookup",
+                "lookups": {k: v["what"] for k, v in _USER_FINDERS.items()}}
+
+    spec = _USER_FINDERS[by]
+    client = _client()
+    if spec["method"] == "GET":
+        # Only the templated lookups take a value; with_profile is the whole list.
+        if "{v}" in spec["path"] and not value:
+            return {"error": f"{by} needs value=<{spec['needs']}>", "what": spec["what"]}
+        status, body = client.json("GET", "organization/{orgId}/"
+                                   + spec["path"].replace("{v}", urllib.parse.quote(value)))
+    else:
+        if not values:
+            return {"error": f"{by} needs values=<{spec['needs']}>", "what": spec["what"]}
+        payload = ({"userIds": values} if by == "ids"
+                   else {"skillRequirements": values})
+        status, body = client.json("POST", "organization/{orgId}/" + spec["path"], payload)
+
+    if status >= 400:
+        return {"found": False, "http": status, "error": body, "what": spec["what"]}
+
+    # Two response shapes live here: the standard {meta,data} envelope and a bare
+    # list. Normalise so a caller never has to know which, but say which it was -
+    # a bare list means there is no pagination and the result may be truncated
+    # server-side with nothing to signal it.
+    if isinstance(body, list):
+        records, meta, bare = body, None, True
+    elif isinstance(body, dict) and "data" in body:
+        records, meta, bare = body.get("data") or [], body.get("meta"), False
+    else:
+        records, meta, bare = [body] if body else [], None, False
+
+    return {
+        "tenant": _tenant(client), "lookup": by, "http": status,
+        "count": len(records), "records": records,
+        "meta": meta,
+        "UNPAGINATED": ("This route returns a bare list with no meta/totalRecords, so "
+                        "there is no way to tell whether the server truncated it.")
+                       if bare else None,
+        "what": spec["what"],
+    }
+
+
 @mcp.tool()
 def wxcc_search_tasks(query: str) -> dict:
     """Query interaction data (calls/tasks/agent sessions) via the GraphQL Search API.

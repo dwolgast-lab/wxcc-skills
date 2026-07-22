@@ -1,0 +1,774 @@
+# WxCC API coverage: Cisco's OpenAPI spec vs the wxcc-skills registry
+
+Spec: `webex/webex-openapi-specs` → `public-spec/webex-contact-center.json`  
+Upstream commit **`2a282a07cede`**, committed **2026-07-22T15:06:57Z**. Generated against registry with **22 entities**.
+
+> The spec is an authoritative map of **what exists**, not proof of **what works**. It declares `application/json` as an accepted body for `POST`/`PUT` on `audio-file`; live probing shows every JSON shape returns 500 and only multipart succeeds. **Where the spec and a live probe disagree, the probe wins.**
+
+## Totals
+
+| | count |
+|---|---|
+| Operations in spec | 448 |
+| Org-scoped config operations | 288 |
+| Non-org-scoped (Tasks/Flows/Journey/…) | 160 |
+| Config path roots | 29 |
+| — registered | 22 |
+| — not registered | 7 |
+| Ops on registered entities | 236 |
+| — reachable by a tool | **194** |
+| — gaps | **42** |
+
+## Registered entities — every operation
+
+`GAP` = no tool reaches it. `decided` = deliberately not exposed, reason given.
+
+
+### `address-book` — 17/19 reachable
+
+| Method | Path | Summary | Tool / status |
+|---|---|---|---|
+| GET | `address-book` | List Address Book(s) | `wxcc_list` |
+| GET | `v2/address-book` | List Address Book(s) | `wxcc_list` |
+| GET | `v3/address-book` | List Address Book(s) | `wxcc_list` |
+| POST | `address-book` | Create a new Address Book | `wxcc_create` |
+| POST | `v3/address-book` | Create a new Address Book | `wxcc_create` |
+| GET | `address-book/bulk-export` | Bulk export Address Book(s) | **decided** — Out of scope by user instruction. |
+| GET | `v2/address-book/{addressBookId}/entry` | List Address Book Entry(s) | `wxcc_add_entry / wxcc_list_entries` |
+| POST | `address-book/{addressBookId}/entry` | Create a new Address Book Entry | `wxcc_add_entry / wxcc_list_entries` |
+| POST | `address-book/{addressBookId}/entry/bulk` | Bulk save Address Book Entry(s) | **decided** — Route confirmed (207 + items) but its accepted ops are UNPROBED, so the bulk tools refuse it. |
+| DELETE | `address-book/{addressBookId}/entry/{id}` | Delete specific Address Book Entry by ID | `wxcc_update_entry / wxcc_remove_entry` |
+| GET | `address-book/{addressBookId}/entry/{id}` | Get specific Address Book Entry by ID | `wxcc_update_entry / wxcc_remove_entry` |
+| PUT | `address-book/{addressBookId}/entry/{id}` | Update specific Address Book Entry by ID | `wxcc_update_entry / wxcc_remove_entry` |
+| DELETE | `address-book/{id}` | Delete specific Address Book by ID | `wxcc_delete` |
+| DELETE | `v3/address-book/{id}` | Delete specific Address Book by ID | `wxcc_delete` |
+| GET | `address-book/{id}` | Get specific Address Book by ID | `wxcc_get` |
+| GET | `v3/address-book/{id}` | Get specific Address Book by ID | `wxcc_get` |
+| PUT | `address-book/{id}` | Update specific Address Book by ID | `wxcc_update` |
+| PUT | `v3/address-book/{id}` | Update specific Address Book by ID | `wxcc_update` |
+| GET | `address-book/{id}/incoming-references` | List references for a specific Address Book | `wxcc_references` |
+
+### `agent-profile` — 8/9 reachable
+
+| Method | Path | Summary | Tool / status |
+|---|---|---|---|
+| GET | `agent-profile` | List Desktop Profiles | `wxcc_list` |
+| GET | `v2/agent-profile` | List Desktop Profiles | `wxcc_list` |
+| POST | `agent-profile` | Create a new Desktop Profile | `wxcc_create` |
+| POST | `agent-profile/bulk` | Bulk save Desktop Profiles | `wxcc_bulk_create/delete` |
+| POST | `agent-profile/purge-inactive-entities` | Purge inactive Desktop Profiles | **decided** — 403 tenant-wide for a full-rights admin (confirmed on auxiliary-code, desktop-layout, agent-profile 2026-07-22). Use wxcc_bulk_delete on chosen ids. |
+| DELETE | `agent-profile/{id}` | Delete specific Desktop Profile by ID | `wxcc_delete` |
+| GET | `agent-profile/{id}` | Get specific Desktop Profile by ID | `wxcc_get` |
+| PUT | `agent-profile/{id}` | Update specific Desktop Profile by ID | `wxcc_update` |
+| GET | `agent-profile/{id}/incoming-references` | List references for a specific Desktop Profile | `wxcc_references` |
+
+### `audio-file` — 7/7 reachable
+
+| Method | Path | Summary | Tool / status |
+|---|---|---|---|
+| GET | `v2/audio-file` | List Audio File(s) | `wxcc_list` |
+| POST | `audio-file` | Create a new Audio File | `wxcc_create` |
+| DELETE | `audio-file/{id}` | Delete specific Audio File by ID | `wxcc_delete` |
+| GET | `audio-file/{id}` | Get specific Audio File by ID | `wxcc_get` |
+| PATCH | `audio-file/{id}` | Partially update Audio File by ID | `wxcc_update (PATCH)` |
+| PUT | `audio-file/{id}` | Update specific Audio File by ID | `wxcc_update` |
+| GET | `audio-file/{id}/incoming-references` | List references for a specific Audio File | `wxcc_references` |
+
+### `auxiliary-code` — 9/11 reachable
+
+| Method | Path | Summary | Tool / status |
+|---|---|---|---|
+| GET | `auxiliary-code` | List Auxiliary Code(s) | `wxcc_list` |
+| GET | `v2/auxiliary-code` | List Auxiliary Code(s) | `wxcc_list` |
+| POST | `auxiliary-code` | Create a new Auxiliary Code | `wxcc_create` |
+| PATCH | `auxiliary-code/bulk` | Bulk partial update Auxiliary Code(s) | `wxcc_bulk_update` |
+| POST | `auxiliary-code/bulk` | Bulk save Auxiliary Code(s) | `wxcc_bulk_create/delete` |
+| GET | `auxiliary-code/bulk-export` | Bulk export Auxiliary Code(s) | **decided** — Out of scope by user instruction. |
+| POST | `auxiliary-code/purge-inactive-entities` | Purge inactive Auxiliary Code(s) | **decided** — 403 tenant-wide for a full-rights admin (confirmed on auxiliary-code, desktop-layout, agent-profile 2026-07-22). Use wxcc_bulk_delete on chosen ids. |
+| DELETE | `auxiliary-code/{id}` | Delete specific Auxiliary Code by ID | `wxcc_delete` |
+| GET | `auxiliary-code/{id}` | Get specific Auxiliary Code by ID | `wxcc_get` |
+| PUT | `auxiliary-code/{id}` | Update specific Auxiliary Code by ID | `wxcc_update` |
+| GET | `auxiliary-code/{id}/incoming-references` | List references for a specific Auxiliary Code | `wxcc_references` |
+
+### `business-hours` — 8/8 reachable
+
+| Method | Path | Summary | Tool / status |
+|---|---|---|---|
+| GET | `business-hours` | List Business Hours resources | `wxcc_list` |
+| GET | `v2/business-hours` | List Business Hours resources | `wxcc_list` |
+| POST | `business-hours` | Create a new Business Hours resource | `wxcc_create` |
+| POST | `business-hours/bulk` | Bulk save Business Hours resources | `wxcc_bulk_create/delete` |
+| DELETE | `business-hours/{id}` | Delete specific Business Hours resource by ID | `wxcc_delete` |
+| GET | `business-hours/{id}` | Get specific Business Hours resource by ID | `wxcc_get` |
+| PUT | `business-hours/{id}` | Update specific Business Hours resource by ID | `wxcc_update` |
+| GET | `business-hours/{id}/incoming-references` | List references for a specific Business Hours resource | `wxcc_references` |
+
+### `cad-variable` — 7/10 reachable
+
+| Method | Path | Summary | Tool / status |
+|---|---|---|---|
+| GET | `v2/cad-variable` | List Global Variable(s) | `wxcc_list` |
+| POST | `cad-variable` | Create a new Global Variable | `wxcc_create` |
+| POST | `cad-variable/bulk` | Bulk save Global Variable(s) | `wxcc_bulk_create/delete/update` |
+| GET | `cad-variable/bulk-export` | Bulk export Global Variable(s) | **decided** — Out of scope by user instruction. |
+| POST | `cad-variable/purge-inactive-entities` | Purge inactive Global Variable(s) | **decided** — 403 tenant-wide for a full-rights admin (confirmed on auxiliary-code, desktop-layout, agent-profile 2026-07-22). Use wxcc_bulk_delete on chosen ids. |
+| GET | `cad-variable/reportable-count` | Get reportable count for Global Variable(s) | **GAP** |
+| DELETE | `cad-variable/{id}` | Delete specific Global Variable by ID | `wxcc_delete` |
+| GET | `cad-variable/{id}` | Get specific Global Variable by ID | `wxcc_get` |
+| PUT | `cad-variable/{id}` | Update specific Global Variable by ID | `wxcc_update` |
+| GET | `cad-variable/{id}/incoming-references` | List references for a specific Global Variable | `wxcc_references` |
+
+### `contact-number` — 6/8 reachable
+
+| Method | Path | Summary | Tool / status |
+|---|---|---|---|
+| GET | `v2/contact-number` | List Contact Number(s) | `wxcc_list` |
+| POST | `contact-number` | Create a new Contact Number | `wxcc_create` |
+| GET | `contact-number/all-numbers` | List all contact numbers(property - number) | **decided** — Returns bare strings with no ids - cannot drive an update or delete. v2/contact-number is the list path. |
+| POST | `contact-number/bulk` | Bulk save Contact Number(s) | `wxcc_bulk_create/delete` |
+| GET | `contact-number/bulk-export` | Bulk export Contact Number(s) | **decided** — Out of scope by user instruction. |
+| DELETE | `contact-number/{id}` | Delete specific Contact Number by ID | `wxcc_delete` |
+| GET | `contact-number/{id}` | Get specific Contact Number by ID | `wxcc_get` |
+| PUT | `contact-number/{id}` | Update specific Contact Number by ID | `wxcc_update` |
+
+### `contact-service-queue` — 12/23 reachable
+
+| Method | Path | Summary | Tool / status |
+|---|---|---|---|
+| GET | `contact-service-queue` | List Contact Service Queues | `wxcc_list` |
+| GET | `v2/contact-service-queue` | List Contact Service Queues | `wxcc_list` |
+| GET | `v3/contact-service-queue` | List Contact Service Queues | `wxcc_list` |
+| POST | `v2/contact-service-queue` | Create a new Contact Service Queue | `wxcc_create` |
+| PATCH | `contact-service-queue/bulk` | Bulk partial update Contact Service Queues | `wxcc_bulk_update` |
+| POST | `contact-service-queue/bulk` | Bulk save Contact Service Queues | `wxcc_bulk_create/delete` |
+| GET | `contact-service-queue/by-skill-profile-id/{id}` | List skill-based Contact Service Queues by skill profile ID (public) | **GAP** |
+| GET | `v2/contact-service-queue/by-user-id/{userid}/agent-based-queues` | List agent-based Contact Service Queues by user ID | **GAP** |
+| GET | `v2/contact-service-queue/by-user-id/{userid}/skill-based-queues` | List skill-based Contact Service Queues by user ID | **GAP** |
+| GET | `v2/contact-service-queue/by-user-id/{userid}/team-based-queues` | List team-based Contact Service Queues by user ID | **GAP** |
+| POST | `contact-service-queue/delete-reference` | Delete references from Contact Service Queues | **GAP** |
+| POST | `contact-service-queue/fetch-by-dynamic-skills-and-skillProfile` | List skill-based Contact Service Queues by dynamic skills and skill profile | **GAP** |
+| POST | `v2/contact-service-queue/fetch-by-grouped-assistant-skill` | List queue mapping summary grouped by Assistant Skill | **GAP** |
+| POST | `contact-service-queue/fetch-by-userId-skillProfileId` | List skill-based Contact Service Queues by skill profile ID and user ID | **GAP** |
+| POST | `contact-service-queue/fetch-manually-assignable-queues` | List manually assignable Contact Service Queues | **GAP** |
+| POST | `contact-service-queue/purge-inactive-entities` | Purge inactive Contact Service Queues | **decided** — 403 tenant-wide for a full-rights admin (confirmed on auxiliary-code, desktop-layout, agent-profile 2026-07-22). Use wxcc_bulk_delete on chosen ids. |
+| POST | `contact-service-queue/v2/bulk` | Bulk save Contact Service Queues | `wxcc_bulk_create/delete` |
+| DELETE | `contact-service-queue/{id}` | Delete specific Contact Service Queue by ID | `wxcc_delete` |
+| GET | `contact-service-queue/{id}` | Get specific Contact Service Queue by ID | `wxcc_get` |
+| GET | `v2/contact-service-queue/{id}` | Get specific Contact Service Queue by ID | `wxcc_get` |
+| PUT | `v2/contact-service-queue/{id}` | Update specific Contact Service Queue by ID | `wxcc_update` |
+| GET | `contact-service-queue/{id}/incoming-references` | List references for a specific Contact Service Queue | `wxcc_references` |
+| POST | `v2/contact-service-queue/{id}/reassign-agents` | Add or remove agents/users to/from an agent based queue | **GAP** |
+
+### `desktop-layout` — 7/8 reachable
+
+| Method | Path | Summary | Tool / status |
+|---|---|---|---|
+| GET | `v2/desktop-layout` | List Desktop Layout(s) | `wxcc_list` |
+| POST | `desktop-layout` | Create a new Desktop Layout | `wxcc_create` |
+| POST | `desktop-layout/bulk` | Bulk save Desktop Layout(s) | `wxcc_bulk_create/delete` |
+| POST | `desktop-layout/purge-inactive-entities` | Purge inactive Desktop Layout(s) | **decided** — 403 tenant-wide for a full-rights admin (confirmed on auxiliary-code, desktop-layout, agent-profile 2026-07-22). Use wxcc_bulk_delete on chosen ids. |
+| DELETE | `desktop-layout/{id}` | Delete specific Desktop Layout by ID | `wxcc_delete` |
+| GET | `desktop-layout/{id}` | Get specific Desktop Layout by ID | `wxcc_get` |
+| PUT | `desktop-layout/{id}` | Update specific Desktop Layout by ID | `wxcc_update` |
+| GET | `desktop-layout/{id}/incoming-references` | List references for a specific Desktop Layout | `wxcc_references` |
+
+### `dial-number` — 8/12 reachable
+
+| Method | Path | Summary | Tool / status |
+|---|---|---|---|
+| DELETE | `dial-number` | Delete all Dialed Number Mapping(s) | **decided** — DELETE would unmap a live number; unprobed and deliberately not exposed (see the registry note). |
+| GET | `dial-number` | List Dialed Number Mapping(s) | `wxcc_list` |
+| GET | `v2/dial-number` | List Dialed Number Mapping(s) | `wxcc_list` |
+| GET | `v3/dial-number` | List Dialed Number Mapping(s) | `wxcc_list` |
+| POST | `dial-number` | Create a new Dialed Number Mapping | `wxcc_create` |
+| POST | `dial-number/bulk` | Bulk save Dialed Number Mapping(s) | `wxcc_bulk_create/update` |
+| GET | `dial-number/bulk-export` | Bulk export Dialed Number Mapping(s) | **decided** — Out of scope by user instruction. |
+| GET | `dial-number/numbers-only` | List  only dialed numbers(property - dialledNumber) from Dialed Number Mapping(s) | **GAP** |
+| DELETE | `dial-number/{id}` | Delete specific Dialed Number Mapping by ID | **decided** — DELETE would unmap a live number; unprobed and deliberately not exposed (see the registry note). |
+| GET | `dial-number/{id}` | Get specific Dialed Number Mapping by ID | `wxcc_get` |
+| PUT | `dial-number/{id}` | Update specific Dialed Number Mapping by ID | `wxcc_update` |
+| GET | `dial-number/{id}/incoming-references` | List references for a specific Dialed Number Mapping | `wxcc_references` |
+
+### `entry-point` — 8/10 reachable
+
+| Method | Path | Summary | Tool / status |
+|---|---|---|---|
+| GET | `entry-point` | List Entry Point(s) | `wxcc_list` |
+| GET | `v2/entry-point` | List Entry Point(s) | `wxcc_list` |
+| POST | `entry-point` | Create a new Entry Point | `wxcc_create` |
+| POST | `entry-point/bulk` | Bulk save Entry Point(s) | `wxcc_bulk_create/delete/update` |
+| GET | `entry-point/bulk-export` | Bulk export Entry Point(s) | **decided** — Out of scope by user instruction. |
+| POST | `entry-point/purge-inactive-entities` | Purge inactive Entry Point(s) | **decided** — 403 tenant-wide for a full-rights admin (confirmed on auxiliary-code, desktop-layout, agent-profile 2026-07-22). Use wxcc_bulk_delete on chosen ids. |
+| DELETE | `entry-point/{id}` | Delete specific Entry Point by ID | `wxcc_delete` |
+| GET | `entry-point/{id}` | Get specific Entry Point by ID | `wxcc_get` |
+| PUT | `entry-point/{id}` | Update specific Entry Point by ID | `wxcc_update` |
+| GET | `entry-point/{id}/incoming-references` | List references for a specific Entry Point | `wxcc_references` |
+
+### `holiday-list` — 8/8 reachable
+
+| Method | Path | Summary | Tool / status |
+|---|---|---|---|
+| GET | `holiday-list` | List Holiday Lists | `wxcc_list` |
+| GET | `v2/holiday-list` | List Holiday Lists | `wxcc_list` |
+| POST | `holiday-list` | Create a new Holiday List | `wxcc_create` |
+| POST | `holiday-list/bulk` | Bulk save Holiday Lists | `wxcc_bulk_create/delete` |
+| DELETE | `holiday-list/{id}` | Delete specific Holiday List by ID | `wxcc_delete` |
+| GET | `holiday-list/{id}` | Get specific Holiday List by ID | `wxcc_get` |
+| PUT | `holiday-list/{id}` | Update specific Holiday List by ID | `wxcc_update` |
+| GET | `holiday-list/{id}/incoming-references` | List references for a specific Holiday List | `wxcc_references` |
+
+### `multimedia-profile` — 8/10 reachable
+
+| Method | Path | Summary | Tool / status |
+|---|---|---|---|
+| GET | `multimedia-profile` | List Multimedia Profile(s) | `wxcc_list` |
+| GET | `v2/multimedia-profile` | List Multimedia Profile(s) | `wxcc_list` |
+| POST | `multimedia-profile` | Create a new Multimedia Profile | `wxcc_create` |
+| POST | `multimedia-profile/bulk` | Bulk save Multimedia Profile(s) | `wxcc_bulk_create/delete` |
+| GET | `multimedia-profile/bulk-export` | Bulk export Multimedia Profile(s) | **decided** — Out of scope by user instruction. |
+| POST | `multimedia-profile/purge-inactive-entities` | Purge inactive Multimedia Profile(s) | **decided** — 403 tenant-wide for a full-rights admin (confirmed on auxiliary-code, desktop-layout, agent-profile 2026-07-22). Use wxcc_bulk_delete on chosen ids. |
+| DELETE | `multimedia-profile/{id}` | Delete specific Multimedia Profile by ID | `wxcc_delete` |
+| GET | `multimedia-profile/{id}` | Get specific Multimedia Profile by ID | `wxcc_get` |
+| PUT | `multimedia-profile/{id}` | Update specific Multimedia Profile by ID | `wxcc_update` |
+| GET | `multimedia-profile/{id}/incoming-references` | List references for a specific Multimedia Profile | `wxcc_references` |
+
+### `outdial-ani` — 13/15 reachable
+
+| Method | Path | Summary | Tool / status |
+|---|---|---|---|
+| GET | `outdial-ani` | List Outdial ANIs | `wxcc_list` |
+| GET | `v2/outdial-ani` | List Outdial ANIs | `wxcc_list` |
+| POST | `outdial-ani` | Create a new Outdial ANI | `wxcc_create` |
+| POST | `outdial-ani/bulk` | Bulk save Outdial ANIs | `wxcc_bulk_create/delete` |
+| GET | `outdial-ani/entry` | List Outdial ANI Entries | **GAP** |
+| DELETE | `outdial-ani/{id}` | Delete specific Outdial ANI by ID | `wxcc_delete` |
+| GET | `outdial-ani/{id}` | Get specific Outdial ANI by ID | `wxcc_get` |
+| PUT | `outdial-ani/{id}` | Update specific Outdial ANI by ID | `wxcc_update` |
+| GET | `outdial-ani/{id}/incoming-references` | List references for a specific Outdial ANI | `wxcc_references` |
+| GET | `v2/outdial-ani/{outDialAniId}/entry` | List Outdial ANI Entries | `wxcc_add_entry / wxcc_list_entries` |
+| POST | `outdial-ani/{outDialAniId}/entry` | Create a new Outdial ANI Entry | `wxcc_add_entry / wxcc_list_entries` |
+| POST | `outdial-ani/{outDialAniId}/entry/bulk` | Bulk save Outdial ANI Entries | **decided** — Route confirmed (207 + items) but its accepted ops are UNPROBED, so the bulk tools refuse it. |
+| DELETE | `outdial-ani/{outDialAniId}/entry/{id}` | Delete specific Outdial ANI Entry by ID | `wxcc_update_entry / wxcc_remove_entry` |
+| GET | `outdial-ani/{outDialAniId}/entry/{id}` | Get specific Outdial ANI Entry by ID | `wxcc_update_entry / wxcc_remove_entry` |
+| PUT | `outdial-ani/{outDialAniId}/entry/{id}` | Update specific Outdial ANI Entry by ID | `wxcc_update_entry / wxcc_remove_entry` |
+
+### `overrides` — 8/8 reachable
+
+| Method | Path | Summary | Tool / status |
+|---|---|---|---|
+| GET | `overrides` | List Overrides resource(s) | `wxcc_list` |
+| GET | `v2/overrides` | List Overrides resource(s) | `wxcc_list` |
+| POST | `overrides` | Create a new Overrides resource | `wxcc_create` |
+| POST | `overrides/bulk` | Bulk save Overrides resource(s) | `wxcc_bulk_create/delete` |
+| DELETE | `overrides/{id}` | Delete specific Overrides resource by ID | `wxcc_delete` |
+| GET | `overrides/{id}` | Get specific Overrides resource by ID | `wxcc_get` |
+| PUT | `overrides/{id}` | Update specific Overrides resource by ID | `wxcc_update` |
+| GET | `overrides/{id}/incoming-references` | List references for a specific Overrides resource | `wxcc_references` |
+
+### `resource-collection` — 7/8 reachable
+
+| Method | Path | Summary | Tool / status |
+|---|---|---|---|
+| GET | `v2/resource-collection` | List Resource Collections | `wxcc_list` |
+| POST | `resource-collection` | Create a new Resource Collection | `wxcc_create` |
+| PATCH | `resource-collection/bulk` | Bulk partial update Resource Collections | `wxcc_bulk_update` |
+| POST | `resource-collection/update-resource` | Update resource with default resource collection | **GAP** |
+| DELETE | `resource-collection/{id}` | Delete specific Resource Collection by ID | `wxcc_delete` |
+| GET | `resource-collection/{id}` | Get specific Resource Collection by ID | `wxcc_get` |
+| PUT | `resource-collection/{id}` | Update specific Resource Collection by ID | `wxcc_update` |
+| GET | `resource-collection/{id}/incoming-references` | List references for a specific Resource Collection | `wxcc_references` |
+
+### `site` — 8/10 reachable
+
+| Method | Path | Summary | Tool / status |
+|---|---|---|---|
+| GET | `site` | List Site(s) | `wxcc_list` |
+| GET | `v2/site` | List Site(s) | `wxcc_list` |
+| POST | `site` | Create a new Site | `wxcc_create` |
+| POST | `site/bulk` | Bulk save Site(s) | `wxcc_bulk_create/delete` |
+| GET | `site/bulk-export` | Bulk export Site(s) | **decided** — Out of scope by user instruction. |
+| POST | `site/purge-inactive-entities` | Purge inactive Site(s) | **decided** — 403 tenant-wide for a full-rights admin (confirmed on auxiliary-code, desktop-layout, agent-profile 2026-07-22). Use wxcc_bulk_delete on chosen ids. |
+| DELETE | `site/{id}` | Delete specific Site by ID | `wxcc_delete` |
+| GET | `site/{id}` | Get specific Site by ID | `wxcc_get` |
+| PUT | `site/{id}` | Update specific Site by ID | `wxcc_update` |
+| GET | `site/{id}/incoming-references` | List references for a specific Site | `wxcc_references` |
+
+### `skill` — 8/10 reachable
+
+| Method | Path | Summary | Tool / status |
+|---|---|---|---|
+| GET | `skill` | List Skill(s) | `wxcc_list` |
+| GET | `v2/skill` | List Skill(s) | `wxcc_list` |
+| POST | `skill` | Create a new Skill | `wxcc_create` |
+| POST | `skill/bulk` | Bulk save Skill(s) | `wxcc_bulk_create/delete` |
+| POST | `skill/populate-json-attr/{id}` | Populate json-attributes field for a given skill-id of an organization | **GAP** |
+| POST | `skill/purge-inactive-entities` | Purge inactive Skill(s) | **decided** — 403 tenant-wide for a full-rights admin (confirmed on auxiliary-code, desktop-layout, agent-profile 2026-07-22). Use wxcc_bulk_delete on chosen ids. |
+| DELETE | `skill/{id}` | Delete specific Skill by ID | `wxcc_delete` |
+| GET | `skill/{id}` | Get specific Skill by ID | `wxcc_get` |
+| PUT | `skill/{id}` | Update specific Skill by ID | `wxcc_update` |
+| GET | `skill/{id}/incoming-references` | List references for a specific Skill | `wxcc_references` |
+
+### `skill-profile` — 8/8 reachable
+
+| Method | Path | Summary | Tool / status |
+|---|---|---|---|
+| GET | `skill-profile` | List Skill Profile(s) | `wxcc_list` |
+| GET | `v2/skill-profile` | List Skill Profile(s) | `wxcc_list` |
+| POST | `skill-profile` | Create a new Skill Profile | `wxcc_create` |
+| POST | `skill-profile/bulk` | Bulk save Skill Profile(s) | `wxcc_bulk_create/delete` |
+| DELETE | `skill-profile/{id}` | Delete specific Skill Profile by ID | `wxcc_delete` |
+| GET | `skill-profile/{id}` | Get specific Skill Profile by ID | `wxcc_get` |
+| PUT | `skill-profile/{id}` | Update specific Skill Profile by ID | `wxcc_update` |
+| GET | `skill-profile/{id}/incoming-references` | List references for a specific Skill Profile | `wxcc_references` |
+
+### `team` — 8/9 reachable
+
+| Method | Path | Summary | Tool / status |
+|---|---|---|---|
+| GET | `team` | List Teams | `wxcc_list` |
+| GET | `v2/team` | List Teams | `wxcc_list` |
+| POST | `team` | Create a new Team | `wxcc_create` |
+| POST | `team/bulk` | Bulk save Teams | `wxcc_bulk_create/delete` |
+| POST | `team/purge-inactive-entities` | Purge inactive Teams | **decided** — 403 tenant-wide for a full-rights admin (confirmed on auxiliary-code, desktop-layout, agent-profile 2026-07-22). Use wxcc_bulk_delete on chosen ids. |
+| DELETE | `team/{id}` | Delete specific Team by ID | `wxcc_delete` |
+| GET | `team/{id}` | Get specific Team by ID | `wxcc_get` |
+| PUT | `team/{id}` | Update specific Team by ID | `wxcc_update` |
+| GET | `team/{id}/incoming-references` | List references for a specific Team | `wxcc_references` |
+
+### `user` — 14/17 reachable
+
+| Method | Path | Summary | Tool / status |
+|---|---|---|---|
+| GET | `user` | List Users | `wxcc_list` |
+| GET | `v2/user` | List Users | `wxcc_list` |
+| PATCH | `user/bulk` | Bulk partial update Users | `wxcc_bulk_update` |
+| PATCH | `user/bulk/update-dynamic-skill/{skillId}` | Bulk partial update Users with dynamic skills | **GAP** |
+| GET | `user/by-call-monitoring-id/{id}` | List users by call monitoring id | `wxcc_find_users(by='call_monitoring_id')` |
+| GET | `user/by-ci-user-id/{id}` | Get specific User by CI User ID | `wxcc_find_users(by='ci_user_id')` |
+| GET | `v2/user/by-ci-user-id/{id}` | Get specific User by CI User ID | **decided** — Duplicate of the non-v2 route, which returns the same record and is what wxcc_find_users(by='ci_user_id') calls. |
+| GET | `user/by-dynamic-skill-id/{skillId}` | Get users by dynamic skill ID | `wxcc_find_users(by='dynamic_skill')` |
+| POST | `user/fetch-by-skill-requirements` | Get the agents matching skill requirements criteria | `wxcc_find_users(by='skill_requirements')` |
+| POST | `user/fetch-user-details-by-ids` | List Users with details | `wxcc_find_users(by='ids')` |
+| GET | `user/with-user-profile` | List Users along with profile | `wxcc_find_users(by='with_profile')` |
+| GET | `user/with-user-profile/{id}` | Get specific User along with profile by ID | `wxcc_find_users(by='with_profile_by_id')` |
+| GET | `user/{id}` | Get specific User by ID | `wxcc_get` |
+| PATCH | `user/{id}` | Partially update User by ID | `wxcc_update (PATCH)` |
+| PUT | `user/{id}` | Update specific User by ID | `wxcc_update` |
+| GET | `user/{id}/incoming-references` | List references for a specific User | `wxcc_references` |
+| PATCH | `user/{id}/reskill` | Reskill Agents | **decided** — 403 'User must have a supervisor profile to reskill agents' - a Supervisor Desktop endpoint. Everything it does is reachable by PATCHing skillProfileId via wxcc_update. |
+
+### `user-profile` — 7/8 reachable
+
+| Method | Path | Summary | Tool / status |
+|---|---|---|---|
+| GET | `v3/user-profile` | List user profiles | `wxcc_list` |
+| POST | `v3/user-profile` | Create a new User Profile | `wxcc_create` |
+| POST | `v3/user-profile/bulk` | Bulk save User Profiles | `wxcc_bulk_create/delete/update` |
+| DELETE | `v3/user-profile/{id}` | Delete specific User Profile by ID | `wxcc_delete` |
+| GET | `v3/user-profile/{id}` | Get specific User Profile by ID | `wxcc_get` |
+| PUT | `v3/user-profile/{id}` | Update specific User Profile by ID | `wxcc_update` |
+| GET | `v3/user-profile/{id}/acl` | Get specific User Profile ACL by ID | **GAP** |
+| GET | `user-profile/{id}/incoming-references` | List references for a specific User Profile | `wxcc_references` |
+
+## Config roots NOT in the registry
+
+
+### `agent-burnout` — 3 operations  (Agent Wellbeing)
+
+| Method | Path | Summary |
+|---|---|---|
+| GET | `v2/agent-burnout` | List Agent Burnout resource(s) |
+| GET | `agent-burnout/{id}` | Get specific Agent Burnout resource by ID |
+| PUT | `agent-burnout/{id}` | Update specific Agent Burnout resource by ID |
+
+### `agent-personal-greeting` — 13 operations  (Agent Personal Greeting Files)
+
+| Method | Path | Summary |
+|---|---|---|
+| GET | `v2/agent-personal-greeting` | List Greeting Files |
+| GET | `v3/agent-personal-greeting` | List Greeting Files |
+| POST | `agent-personal-greeting` | Create a new Greeting File |
+| POST | `v2/agent-personal-greeting` | Create a new Greeting File |
+| POST | `agent-personal-greeting/delete-reference` | Delete references of an agent from greeting files |
+| DELETE | `agent-personal-greeting/{id}` | Delete specific Greeting File by ID |
+| DELETE | `v2/agent-personal-greeting/{id}` | Delete specific Greeting File by ID |
+| GET | `agent-personal-greeting/{id}` | Get specific Greeting File by ID |
+| GET | `v2/agent-personal-greeting/{id}` | Get specific Greeting File by ID |
+| PATCH | `agent-personal-greeting/{id}` | Partially update Greeting File by ID |
+| PATCH | `v2/agent-personal-greeting/{id}` | Partially update Greeting File by ID |
+| PUT | `agent-personal-greeting/{id}` | Update specific Greeting File by ID |
+| PUT | `v2/agent-personal-greeting/{id}` | Update specific Greeting File by ID |
+
+### `ai-feature` — 8 operations  (AI Feature)
+
+| Method | Path | Summary |
+|---|---|---|
+| GET | `v2/ai-feature` | List AI Feature resource(s) |
+| GET | `v2/ai-feature/auto-csat/question` | List Question mapped to AutoCSAT(s) |
+| POST | `ai-feature/auto-csat/question` | Create a new Question mapped to AutoCSAT |
+| POST | `ai-feature/auto-csat/question/bulk` | Bulk save Question mapped to AutoCSAT |
+| DELETE | `ai-feature/auto-csat/question/{id}` | Delete specific Question mapped to AutoCSAT by ID |
+| GET | `ai-feature/auto-csat/question/{id}` | Get specific Question mapped to AutoCSAT by ID |
+| GET | `ai-feature/{id}` | Get specific AI Feature resource by ID |
+| PATCH | `ai-feature/{id}` | Partially update AI Feature resource by ID |
+
+### `auto-csat` — 8 operations  (Auto CSAT)
+
+| Method | Path | Summary |
+|---|---|---|
+| GET | `v2/auto-csat` | List Auto CSAT resource(s) |
+| GET | `v2/auto-csat/{autoCsatId}/question` | List Auto CSAT mapped Question(s) |
+| POST | `auto-csat/{autoCsatId}/question` | Create a new Auto CSAT mapped Question |
+| POST | `auto-csat/{autoCsatId}/question/bulk` | Bulk save Auto CSAT mapped Question(s) |
+| DELETE | `auto-csat/{autoCsatId}/question/{id}` | Delete specific Auto CSAT mapped Question by ID |
+| GET | `auto-csat/{autoCsatId}/question/{id}` | Get specific Auto CSAT mapped Question by ID |
+| GET | `auto-csat/{id}` | Get specific Auto CSAT resource by ID |
+| PUT | `auto-csat/{id}` | Update specific Auto CSAT resource by ID |
+
+### `dial-plan` — 8 operations  (Dial Plan)
+
+| Method | Path | Summary |
+|---|---|---|
+| GET | `dial-plan` | List Dial Plans |
+| GET | `v2/dial-plan` | List Dial Plans |
+| POST | `dial-plan` | Create a new Dial Plan |
+| POST | `dial-plan/bulk` | Bulk save Dial Plans |
+| DELETE | `dial-plan/{id}` | Delete specific Dial Plan by ID |
+| GET | `dial-plan/{id}` | Get specific Dial Plan by ID |
+| PUT | `dial-plan/{id}` | Update specific Dial Plan by ID |
+| GET | `dial-plan/{id}/incoming-references` | List references for a specific Dial Plan |
+
+### `generated-summaries` — 3 operations  (Generated Summaries)
+
+| Method | Path | Summary |
+|---|---|---|
+| GET | `v2/generated-summaries` | List Generated Summaries resource(s) |
+| GET | `generated-summaries/{id}` | Get specific Generated Summaries resource by ID |
+| PUT | `generated-summaries/{id}` | Update specific Generated Summaries resource by ID |
+
+### `work-type` — 9 operations  (Work Types)
+
+| Method | Path | Summary |
+|---|---|---|
+| GET | `v2/work-type` | List Work Type(s) |
+| POST | `work-type` | Create a new Work Type |
+| POST | `work-type/bulk` | Bulk save Work Type(s) |
+| GET | `work-type/bulk-export` | Bulk export Work Type(s) |
+| POST | `work-type/purge-inactive-entities` | Purge inactive Work Type(s) |
+| DELETE | `work-type/{id}` | Delete specific Work Type by ID |
+| GET | `work-type/{id}` | Get specific Work Type by ID |
+| PUT | `work-type/{id}` | Update specific Work Type by ID |
+| GET | `work-type/{id}/incoming-references` | List references for a specific Work Type |
+
+## Non-org-scoped operations (different API families)
+
+
+### Tasks — 24 operations
+
+| Method | Path | Summary |
+|---|---|---|
+| POST | `/v1/dialer/campaign/{campaignId}/preview-task/{taskId}/accept` | Accept Preview Task |
+| POST | `/v1/dialer/campaign/{campaignId}/preview-task/{taskId}/remove` | Remove Preview Task |
+| POST | `/v1/dialer/campaign/{campaignId}/preview-task/{taskId}/skip` | Skip Preview Task |
+| GET | `/v1/tasks` | Get Tasks |
+| POST | `/v1/tasks` | Create Task |
+| PATCH | `/v1/tasks/{taskId}` | Update Task |
+| POST | `/v1/tasks/{taskId}/accept` | Accept Task |
+| POST | `/v1/tasks/{taskId}/assign` | Assign Task |
+| POST | `/v1/tasks/{taskId}/conference/exit` | Exit Conference Task |
+| POST | `/v1/tasks/{taskId}/consult` | Consult Task |
+| POST | `/v1/tasks/{taskId}/consult/accept` | Consult Accept Task |
+| POST | `/v1/tasks/{taskId}/consult/conference` | Consult Conference Task |
+| POST | `/v1/tasks/{taskId}/consult/end` | Consult End Task |
+| POST | `/v1/tasks/{taskId}/consult/transfer` | Consult Transfer Task |
+| POST | `/v1/tasks/{taskId}/end` | End Task |
+| POST | `/v1/tasks/{taskId}/hold` | Hold Task |
+| POST | `/v1/tasks/{taskId}/record/pause` | Pause Recording Task |
+| POST | `/v1/tasks/{taskId}/record/resume` | Resume Recording Task |
+| POST | `/v1/tasks/{taskId}/reject` | Reject Task |
+| POST | `/v1/tasks/{taskId}/transfer` | Transfer Task |
+| POST | `/v1/tasks/{taskId}/unhold` | Resume Task |
+| POST | `/v1/tasks/{taskId}/wrapup` | Wrap Up Task |
+| POST | `/v2/tasks` | Create Task |
+| POST | `/v2/tasks/{taskId}/messages` | Append Task Message |
+
+### Journey - Profile Creation & Insights API — 14 operations
+
+| Method | Path | Summary |
+|---|---|---|
+| GET | `/admin/v1/api/profile-view-template/workspace-id/{workspaceId}` | Get All Template Details |
+| POST | `/admin/v1/api/profile-view-template/workspace-id/{workspaceId}` | Create Template |
+| DELETE | `/admin/v1/api/profile-view-template/workspace-id/{workspaceId}/template-id/{templateId}` | Delete Template by template Id |
+| GET | `/admin/v1/api/profile-view-template/workspace-id/{workspaceId}/template-id/{templateId}` | Get A specific Template searched by template id |
+| PUT | `/admin/v1/api/profile-view-template/workspace-id/{workspaceId}/template-id/{templateId}` | Update existing ProfileViewTemplate |
+| GET | `/admin/v1/api/profile-view-template/workspace-id/{workspaceId}/template-name/{templateName}` | Get A specific Template searched by template name |
+| GET | `/v1/api/events/stream/workspace-id/{workspaceId}/identity/{identity}` | Stream Events By Identity |
+| GET | `/v1/api/events/workspace-id/{workspaceId}` | Historic Journey Events |
+| GET | `/v1/api/progressive-profile-view/stream/workspace-id/{workspaceId}/identity/{identity}/template-id/{templateId}` | Stream Progressive profile Views By Template Id |
+| GET | `/v1/api/progressive-profile-view/stream/workspace-id/{workspaceId}/identity/{identity}/template-name/{templateName}` | Stream Progressive profile Views By Template Name |
+| GET | `/v1/api/progressive-profile-view/workspace-id/{workspaceId}/identity/{identity}/template-id/{templateId}` | Historic Progressive Profile View By Template Id |
+| GET | `/v1/api/progressive-profile-view/workspace-id/{workspaceId}/identity/{identity}/template-name/{templateName}` | Historic Progressive Profile View By Template Name |
+| GET | `/v1/api/progressive-profile-view/workspace-id/{workspaceId}/person-id/{personId}/template-id/{templateId}` | Historic Progressive Profile View |
+| GET | `/v1/api/progressive-profile-view/workspace-id/{workspaceId}/person-id/{personId}/template-name/{templateName}` | Historic Progressive Profile View by Template Name |
+
+### Flows — 13 operations
+
+| Method | Path | Summary |
+|---|---|---|
+| GET | `/{orgId}/project/{projectId}/flows` | List Flows or Subflows |
+| DELETE | `/{orgId}/project/{projectId}/flows/{flowId}` | Delete a Flow or Subflow |
+| POST | `/{orgId}/project/{projectId}/flows/{flowId}:lock` | Lock a Flow or Subflow |
+| POST | `/{orgId}/project/{projectId}/flows/{flowId}:publish` | Publish a Flow or Subflow |
+| POST | `/{orgId}/project/{projectId}/flows/{flowId}:unlock` | Unlock a Flow or Subflow |
+| GET | `/{orgId}/project/{projectId}/flows:search` | Search Flows |
+| GET | `/{orgId}/project/{projectId}/v2/flows/{flowId}` | Get a Flow |
+| PATCH | `/{orgId}/project/{projectId}/v2/flows/{flowId}` | Patch a Flow Draft |
+| POST | `/{orgId}/project/{projectId}/v2/flows/{flowId}` | Save a Flow Draft |
+| GET | `/{orgId}/project/{projectId}/v2/flows/{flowId}:export` | Export a Flow |
+| GET | `/{orgId}/project/{projectId}/v2/flows/{flowId}:validate` | Validate an Existing Flow Draft |
+| POST | `/{orgId}/project/{projectId}/v2/flows:import` | Import a Flow |
+| POST | `/{orgId}/project/{projectId}/v2/flows:validate` | Validate a Flow |
+
+### Subscriptions — 12 operations
+
+| Method | Path | Summary |
+|---|---|---|
+| GET | `/v1/event-types` | List Event Types |
+| GET | `/v1/subscriptions` | List Subscriptions |
+| POST | `/v1/subscriptions` | Register Subscription |
+| DELETE | `/v1/subscriptions/{id}` | Delete Subscription |
+| GET | `/v1/subscriptions/{id}` | Get Subscription |
+| PATCH | `/v1/subscriptions/{id}` | Update Subscription |
+| GET | `/v2/event-types` | List Event Types |
+| GET | `/v2/subscriptions` | List Subscriptions |
+| POST | `/v2/subscriptions` | Register Subscription |
+| DELETE | `/v2/subscriptions/{id}` | Delete Subscription |
+| GET | `/v2/subscriptions/{id}` | Get Subscription |
+| PATCH | `/v2/subscriptions/{id}` | Update Subscription |
+
+### Agents — 11 operations
+
+| Method | Path | Summary |
+|---|---|---|
+| GET | `/v1/agents/activities` | Get Agent Activities |
+| POST | `/v1/agents/buddyList` | Buddy Agents List |
+| POST | `/v1/agents/login` | Login |
+| PUT | `/v1/agents/logout` | Logout |
+| POST | `/v1/agents/reload` | Reload |
+| PUT | `/v1/agents/session/state` | State Change |
+| GET | `/v1/agents/statistics` | Get Agent Statistics |
+| POST | `/v2/agents/login` | Login |
+| PUT | `/v2/agents/logout` | Logout |
+| POST | `/v2/agents/reload` | Reload |
+| PUT | `/v2/agents/session/state` | State Change |
+
+### Functions — 10 operations
+
+| Method | Path | Summary |
+|---|---|---|
+| GET | `/v1/{orgId}/functions` | List Custom Functions |
+| POST | `/v1/{orgId}/functions` | Create a Custom Function |
+| DELETE | `/v1/{orgId}/functions/{id}` | Delete a Custom Function |
+| GET | `/v1/{orgId}/functions/{id}` | Get a Custom Function |
+| PUT | `/v1/{orgId}/functions/{id}` | Update a Custom Function |
+| POST | `/v1/{orgId}/functions/{id}:export` | Export a Custom Function |
+| POST | `/v1/{orgId}/functions/{id}:lock` | Lock a Custom Function |
+| POST | `/v1/{orgId}/functions/{id}:publish` | Publish a Custom Function |
+| POST | `/v1/{orgId}/functions/{id}:unlock` | Unlock a Custom Function |
+| POST | `/v1/{orgId}/functions:import` | Import a Custom Function |
+
+### Journey - Customer Identification API — 9 operations
+
+| Method | Path | Summary |
+|---|---|---|
+| PATCH | `/admin/v1/api/person/add-identities/workspace-id/{workspaceId}/person-id/{personId}` | Add one/more Identities to a person |
+| POST | `/admin/v1/api/person/merge-identities/workspace-id/{workspaceId}` | Creates or merges aliases to an Individual in JDS |
+| POST | `/admin/v1/api/person/merge/workspace-id/{workspaceId}/primary-person-id/{primaryPersonId}` | Merges Identities to a Primary Identity |
+| PATCH | `/admin/v1/api/person/remove-identities/workspace-id/{workspaceId}/person-id/{personId}` | Remove one/more Identities from a person |
+| GET | `/admin/v1/api/person/workspace-id/{workspaceId}` | Get all or a specific Person Details |
+| POST | `/admin/v1/api/person/workspace-id/{workspaceId}` | Create a Person |
+| GET | `/admin/v1/api/person/workspace-id/{workspaceId}/aliases/{aliases}` | Search for an Identity via aliases |
+| DELETE | `/admin/v1/api/person/workspace-id/{workspaceId}/person-id/{personId}` | Delete specific Person by id |
+| PATCH | `/admin/v1/api/person/workspace-id/{workspaceId}/person-id/{personId}` | Add/Remove/Replace details of a Person |
+
+### Data Sources — 7 operations
+
+| Method | Path | Summary |
+|---|---|---|
+| POST | `/dataSources` | Register a Data Source |
+| GET | `/dataSources/` | Retrieve All Data Sources |
+| GET | `/dataSources/schemas` | Retrieve Data Source Schemas |
+| GET | `/dataSources/schemas/{schemaId}` | Retrieve Details of a Specific Data Source Schema |
+| DELETE | `/dataSources/{dataSourceId}` | Delete a Data Source |
+| GET | `/dataSources/{dataSourceId}` | Retrieve Data Source Details |
+| PUT | `/dataSources/{dataSourceId}` | Update a Data Source |
+
+### Call Monitoring — 7 operations
+
+| Method | Path | Summary |
+|---|---|---|
+| POST | `/v1/monitor` | Create Monitoring Request |
+| GET | `/v1/monitor/sessions` | Fetch Monitoring Sessions |
+| DELETE | `/v1/monitor/{requestId}` | Delete Monitoring Request |
+| POST | `/v1/monitor/{taskId}/bargeIn` | BargeIn Request |
+| POST | `/v1/monitor/{taskId}/end` | End Monitoring Request |
+| POST | `/v1/monitor/{taskId}/hold` | Hold Monitoring Request |
+| POST | `/v1/monitor/{taskId}/unhold` | Unhold Monitoring Request |
+
+### Journey - Trigger Actions API — 7 operations
+
+| Method | Path | Summary |
+|---|---|---|
+| GET | `/admin/v1/api/journey-actions/workspace-id/{workspaceId}` | Get all Journey Actions |
+| GET | `/admin/v1/api/journey-actions/workspace-id/{workspaceId}/template-id/{templateId}` | Get all Journey Actions for a template |
+| POST | `/admin/v1/api/journey-actions/workspace-id/{workspaceId}/template-id/{templateId}` | Create a new  Journey Action |
+| DELETE | `/admin/v1/api/journey-actions/workspace-id/{workspaceId}/template-id/{templateId}/action-id/{actionId}` | Delete Journey Action configuration By ActionId |
+| GET | `/admin/v1/api/journey-actions/workspace-id/{workspaceId}/template-id/{templateId}/action-id/{actionId}` | Get specific Journey Action By ActionId |
+| PUT | `/admin/v1/api/journey-actions/workspace-id/{workspaceId}/template-id/{templateId}/action-id/{actionId}` | Update existing Journey Action |
+| GET | `/admin/v1/api/journey-actions/workspace-id/{workspaceId}/template-id/{templateId}/action-name/{actionName}` | Get specific Journey Action By Name |
+
+### Contact List Management — 7 operations
+
+| Method | Path | Summary |
+|---|---|---|
+| POST | `/v3/campaign-management/campaigns/{campaignId}/contact-list` | Create contact list |
+| POST | `/v3/campaign-management/campaigns/{campaignId}/contact-list/{contactListId}/contacts` | Create contacts within a contact list |
+| PATCH | `/v3/campaign-management/campaigns/{campaignId}/contact-list/{contactListId}/contacts/{contactId}` | Update a contact's status within a contact list |
+| PATCH | `/v3/campaign-management/campaigns/{campaignId}/contact-list/{contactListId}/status` | Update contact list status |
+| GET | `/v3/campaign-management/campaigns/{campaignId}/contact-lists` | Get Contact Lists within a Campaign |
+| PATCH | `/v3/campaign-management/campaigns/{campaignId}/contacts/{contactId}` | Update contact status across the campaign chain |
+| GET | `/v4/campaign-management/campaigns/{campaignId}/contact-lists` | Get Contact Lists within a Campaign |
+
+### Callbacks — 5 operations
+
+| Method | Path | Summary |
+|---|---|---|
+| GET | `/v1/callbacks/organization/{orgId}/scheduled-callback` | Get scheduled callbacks |
+| POST | `/v1/callbacks/organization/{orgId}/scheduled-callback` | Schedule a Callback |
+| DELETE | `/v1/callbacks/organization/{orgId}/scheduled-callback/{id}` | Delete scheduled callback by Id |
+| GET | `/v1/callbacks/organization/{orgId}/scheduled-callback/{id}` | Get scheduled callback by Id |
+| PUT | `/v1/callbacks/organization/{orgId}/scheduled-callback/{id}` | Update scheduled callback by Id |
+
+### Journey - Workspace management API — 5 operations
+
+| Method | Path | Summary |
+|---|---|---|
+| GET | `/admin/v1/api/workspace` | Get All Workspaces |
+| POST | `/admin/v1/api/workspace` | Create Workspace |
+| DELETE | `/admin/v1/api/workspace/workspace-id/{workspaceId}` | Delete Workspace |
+| GET | `/admin/v1/api/workspace/workspace-id/{workspaceId}` | Get Workspace |
+| PUT | `/admin/v1/api/workspace/workspace-id/{workspaceId}` | Update Workspace |
+
+### Campaign Manager — 4 operations
+
+| Method | Path | Summary |
+|---|---|---|
+| POST | `/v1/dialer/campaign` | Start Campaign Request |
+| DELETE | `/v1/dialer/campaign/{campaignId}` | Stop Campaign Request |
+| PUT | `/v1/dialer/campaign/{campaignId}` | Update Campaign Request |
+| GET | `/v1/organization/{orgId}/getValidCampaignTimes` | Get Valid Campaign Times |
+
+### Activities — 3 operations
+
+| Method | Path | Summary |
+|---|---|---|
+| GET | `/{orgId}/project/{projectId}/v2/activities` | List Activity Definitions |
+| GET | `/{orgId}/project/{projectId}/v2/activities/{activityName}` | Describe an Activity |
+| GET | `/{orgId}/project/{projectId}/v2/activities/{activityName}/inputs/{inputName}/choices` | Get Activity Input Choices |
+
+### Journey - Subscription API — 3 operations
+
+| Method | Path | Summary |
+|---|---|---|
+| DELETE | `/admin/v1/api/wxcc-subscription/workspace-id/{workspaceId}` | Delete WXCC Subscription |
+| GET | `/admin/v1/api/wxcc-subscription/workspace-id/{workspaceId}` | Get WXCC Subscription |
+| POST | `/admin/v1/api/wxcc-subscription/workspace-id/{workspaceId}` | Create WXCC Subscription |
+
+### DNC Management — 3 operations
+
+| Method | Path | Summary |
+|---|---|---|
+| POST | `/v3/campaign-management/dncList/{dncListName}/phoneNumber` | Add Phone Number to DNC List |
+| DELETE | `/v3/campaign-management/dncList/{dncListName}/phoneNumber/{phoneNumber}` | Remove Phone Number from DNC List |
+| GET | `/v3/campaign-management/dncList/{dncListName}/phoneNumber/{phoneNumber}` | Get Phone Number from DNC List |
+
+### Agent Wellbeing — 2 operations
+
+| Method | Path | Summary |
+|---|---|---|
+| POST | `/v1/agentburnout/action` | Record the realtime burnout events |
+| POST | `/v1/agentburnout/subscribe` | Subscribe for realtime burnout events |
+
+### Legacy Flows — 2 operations
+
+| Method | Path | Summary |
+|---|---|---|
+| GET | `/flow-store/{orgId}/project/{projectId}/flows/{flowId}:export` | Export a Flow or Subflow |
+| POST | `/flow-store/{orgId}/project/{projectId}/flows:import` | Import a Flow or Subflow |
+
+### Templates — 2 operations
+
+| Method | Path | Summary |
+|---|---|---|
+| GET | `/templates` | List Flow Templates |
+| GET | `/templates/{id}` | Get a Flow Template |
+
+### Agent Summaries — 1 operations
+
+| Method | Path | Summary |
+|---|---|---|
+| POST | `/generated-summaries/search` | List summaries |
+
+### Estimated Wait Time — 1 operations
+
+| Method | Path | Summary |
+|---|---|---|
+| GET | `/v1/ewt` | Get Estimated Wait Time |
+
+### Notification — 1 operations
+
+| Method | Path | Summary |
+|---|---|---|
+| POST | `/v1/notification/subscribe` | Subscribe Notification |
+
+### Queues — 1 operations
+
+| Method | Path | Summary |
+|---|---|---|
+| GET | `/v1/queues/statistics` | Get Queue Statistics |
+
+### Realtime — 1 operations
+
+| Method | Path | Summary |
+|---|---|---|
+| POST | `/v1/realtime/subscribe` | Subscribe Realtime Notification |
+
+### Search — 1 operations
+
+| Method | Path | Summary |
+|---|---|---|
+| POST | `/search` | Search tasks |
+
+### Events — 1 operations
+
+| Method | Path | Summary |
+|---|---|---|
+| GET | `/{orgId}/project/{projectId}/v2/event-specifications` | List Event Specifications |
+
+### Journey - Data Ingestion API — 1 operations
+
+| Method | Path | Summary |
+|---|---|---|
+| POST | `/publish/v1/api/event` | Journey Event Posting |
+
+### Captures — 1 operations
+
+| Method | Path | Summary |
+|---|---|---|
+| POST | `/v1/captures/query` | List Captures |
+
+### Campaign Group — 1 operations
+
+| Method | Path | Summary |
+|---|---|---|
+| GET | `/v3/campaign-management/campaign-groups/{campaignGroupName}/campaigns` | List Campaigns by Campaign Group |

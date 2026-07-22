@@ -65,6 +65,7 @@ an op an entity hasn't been proven to support. As of 2026-07-21:
 | `contact-number` | ✅ | ❌ | ✅ | no bulk update, same 400; `number` only, max 9 chars |
 | `resource-collection` | ❌ | ✅ RMW | ❌ | **update only, and on PATCH**; create → 500 "no mapping for id", delete → 400 "SAVE only" |
 | `audio-file` | ❌ | ❌ | ❌ | **no bulk route published** (2026-07-22). Each file is a multipart upload — see **wxcc-audio-files**. Bulk-export is out of scope for these tools. |
+| `user` | ❌ | ✅ partial | ❌ | **update only**, on `PATCH user/bulk` (207 + items, verified 2026-07-22). No bulk create/delete because **Control Hub owns the user lifecycle**. Identity fields stay immutable in bulk too. |
 
 ## Purge endpoints: real, and 403 for everyone (canonical note)
 

@@ -3,6 +3,60 @@
 Notable changes to the wxcc-skills library. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); entries are dated, newest first.
 
+- **2026-07-22 — Cisco publishes an OpenAPI spec, and it changes how this project works.**
+  `webex/webex-openapi-specs` → `public-spec/webex-contact-center.json`: **448 operations,
+  327 paths, 756 schemas**, OpenAPI 3.0.0, updated roughly weekly (15 commits since
+  2026-06-08, one the same day this was written). Tag counts match the portal screenshots
+  exactly, so the two are the same source.
+  - **It is a map of what EXISTS, not proof of what WORKS.** The spec declares
+    `application/json` as an accepted body for `POST`/`PUT` on `audio-file` — five distinct
+    JSON shapes all return 500, and only multipart succeeds. **Where the spec and a live
+    probe disagree, the probe wins.** Schema quality is also uneven: `PATCH user/{id}`
+    documents its body as `JsonValue` with a single field, which is no documentation at all.
+  - **It independently confirmed two findings made by probing**: `audio-file` publishes no
+    bulk route, and there is **no `contact-number/{id}/incoming-references` path at all** —
+    the defect behind the delete bug fixed earlier today.
+  - **`docs/api-coverage.md`** is generated from the spec plus the registry: every operation
+    with the tool that reaches it, or the reason it is deliberately refused. Pinned to
+    upstream commit `2a282a07cede`. The spec is deliberately **not vendored** — at weekly
+    cadence a static copy would be stale within days.
+  - Coverage today: **194 of 236** operations on registered entities are reachable. Of the
+    42 gaps, 10 are purge (403 tenant-wide), 8 are bulk-export (out of scope), 2 are
+    child `entry/bulk` (unprobed), leaving ~22 genuinely unexplored. **22 of 29 config path
+    roots are registered**; the unregistered ones are `agent-personal-greeting` (13 ops),
+    `ai-feature` (8), `auto-csat` (8), `agent-burnout` (3), `generated-summaries` (3), plus
+    `work-type` and `dial-plan`, both already struck as deprecated.
+- **2026-07-22 — `user`: a real PATCH, bulk update, and seven lookups. Tools go to 17.**
+  Verified live against one designated test user, with a full field baseline captured first
+  and **zero drift** at the end.
+  - **`wxcc_update` on a user is now a PATCH, not a read-modify-write PUT.** `user` has a
+    genuine single-item partial update: changing `agentProfileId` left `teamIds`, `siteId`
+    and `userProfileId` untouched. This matters because the user record carries fields the
+    API returns on GET but refuses to write — a full PUT has to echo them back, a PATCH never
+    mentions them. The body is a plain partial object; JSON-Patch array form returns **500**.
+  - **New `wxcc_find_users`** exposes the seven routes `wxcc_list` cannot express:
+    `with_profile` (users joined to their profile in one call), `with_profile_by_id`,
+    `ci_user_id` (Control Hub id → CC user), `dynamic_skill`, `call_monitoring_id`, `ids`,
+    and `skill_requirements`. Bodies were read from the spec rather than guessed:
+    `fetch-user-details-by-ids` wants `{userIds:[...]}`, `fetch-by-skill-requirements` wants
+    `{skillRequirements:[{skillId}]}`.
+  - **`with_profile` returns a BARE LIST** — no envelope, no `totalRecords`, no pagination —
+    so the tool flags `UNPAGINATED`: there is no way to know whether the server truncated it.
+  - **Bulk update for `user`** on `PATCH user/bulk` (207 + items). No bulk create/delete:
+    Control Hub owns the lifecycle.
+  - **`PATCH user/{id}/reskill` is NOT exposed:** 403 *"User must have a supervisor profile
+    to reskill agents"* — a Supervisor Desktop endpoint. Everything it does is reachable by
+    PATCHing `skillProfileId`, which was confirmed to both **assign and clear** (null).
+  - **`userLevelAutoCSATInclusion` is silently ignored** on a 200, exactly like
+    `userLevelSummariesInclusion`. Two fields now share this behaviour; treat both as
+    unwritable until a tenant proves otherwise.
+  - **Method lesson that nearly shipped a false all-clear:** the dynamic-skill bulk route
+    really did assign a skill to the test user, but **dynamic skills are not fields on the
+    user record**, so a field-by-field baseline diff reported "no drift" while the
+    assignment was live. It was found by querying `by-dynamic-skill-id` across every skill,
+    and removed with `requestAction: DELETE`. **A baseline diff only covers the surface it
+    can see** — for anything stored outside the object, the restore check has to query the
+    other side.
 - **2026-07-22 — `purge-inactive-entities` is 403 TENANT-WIDE, settled on three entities.**
   The Desktop Layout / Desktop Profile endpoint lists contained **no new routes** — every
   one was already registered except purge, the same single gap the aux-code list had. Fired
