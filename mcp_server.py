@@ -235,7 +235,10 @@ ENTITIES: dict[str, dict[str, Any]] = {
                 "hits every agent on it at next login. BULK create refuses a "
                 "systemDefault clone with 403 'User not Allowed to create system default "
                 "entity' - the stock profiles are ALL systemDefault, so send "
-                "systemDefault=false (verified live 2026-07-21).",
+                "systemDefault=false (verified live 2026-07-21). PURGE IS NOT EXPOSED: "
+                "`POST agent-profile/purge-inactive-entities` exists but returns 403 for a "
+                "full-rights admin - the same tenant-wide gate seen on auxiliary-code and "
+                "desktop-layout (2026-07-22). Use wxcc_bulk_delete on ids you chose.",
     },
     "desktop-layout": {
         "list": "v2/desktop-layout", "item": "desktop-layout/{id}",
@@ -254,7 +257,11 @@ ENTITIES: dict[str, dict[str, Any]] = {
                 "MISLEADING 400 naming 'Teams assigned ... already assigned to another "
                 "desktop layout' even though the payload has no teams key at all - a "
                 "global layout implicitly claims every team. Send global=false and "
-                "teamIds=[] (verified live 2026-07-21).",
+                "teamIds=[] (verified live 2026-07-21). The active flag here is `status` "
+                "(boolean), not `active`. PURGE IS NOT EXPOSED: "
+                "`POST desktop-layout/purge-inactive-entities` exists but returns 403 for a "
+                "full-rights admin - the same tenant-wide gate seen on auxiliary-code and "
+                "agent-profile (2026-07-22). Use wxcc_bulk_delete on ids you chose.",
     },
     "multimedia-profile": {
         "list": "v2/multimedia-profile", "item": "multimedia-profile/{id}",

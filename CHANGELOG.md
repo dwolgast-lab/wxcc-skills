@@ -3,6 +3,23 @@
 Notable changes to the wxcc-skills library. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); entries are dated, newest first.
 
+- **2026-07-22 — `purge-inactive-entities` is 403 TENANT-WIDE, settled on three entities.**
+  The Desktop Layout / Desktop Profile endpoint lists contained **no new routes** — every
+  one was already registered except purge, the same single gap the aux-code list had. Fired
+  against real inactive objects the tenant admin created for the test (one unreferenced,
+  non-`systemDefault` `_copy` in each family): `desktop-layout` **403**, `agent-profile`
+  **403**, byte-identical to `auxiliary-code`'s, with the control `POST
+  agent-profile/notaroute` returning **405** in the framework's `timestamp` shape. The
+  routes are real and the gate is authorization, and three entities behaving identically
+  makes it **tenant-wide, not per-entity**. Nothing was destroyed — both inactive copies
+  survived and both families stayed at 3.
+  - The canonical note now lives once, in **wxcc-bulk**; `wxcc-aux-codes`,
+    `wxcc-desktop-layouts` and `wxcc-desktop-profiles` point at it instead of restating it.
+    This supersedes the `wxcc-desktop-profiles` line calling purge "unprobed".
+  - **`desktop-layout`'s active flag is `status`, not `active`** — noticed while enumerating
+    what purge would hit. Every other entity uses `active`, so filtering `active=false` on
+    layouts silently matches nothing: a filter that looks clean while finding no inactive
+    records. Recorded in the registry note and the skill.
 - **2026-07-22 — BUG: `wxcc_delete` could never delete a `contact-number`, and the registry
   claimed it could.** Found while writing skills for the scheduling group. `GET
   contact-number/{id}/incoming-references` answers **400 "specify a valid external entity

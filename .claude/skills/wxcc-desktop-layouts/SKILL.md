@@ -69,6 +69,8 @@ Assigning teams at create via `teamIds` is untested (**candidate**) — the prob
 | List vs item shape | `jsonFileContent` only on the item read |
 | **Never touch the `systemDefault` Global Layout** | It is the tenant-wide fallback — breaking it breaks every agent with no layout of their own |
 | Delete | No rollback; recreate yields a new id and teams pointing at the old one break |
+| **The active flag is `status`, not `active`** | Every other entity uses `active`. Filtering `active=false` here silently matches nothing — a filter that looks clean while finding no inactive layouts. |
+| Purge | `POST desktop-layout/purge-inactive-entities` exists but returns **403 for a full-rights admin** (probed 2026-07-22) and is not exposed — the same tenant-wide gate as `auxiliary-code` and `agent-profile`. To delete inactive layouts, filter `status=false` in code and pass those ids to `wxcc_bulk_delete`. Canonical note in **wxcc-bulk**. |
 
 ## Provenance and maintenance
 

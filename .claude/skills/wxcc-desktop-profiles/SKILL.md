@@ -109,7 +109,7 @@ user pointing at the old one breaks.
 | `dialPlanEnabled`/`dialPlans` | Still in responses; **Dial Plan is deprecated in WxCC**. Ignore. |
 | Paired fields | `autoWrapAfterSeconds` alone → 400; send `autoWrapUp` with it. The `access*` switch/list pairs are likely the same (candidate). |
 | Blast radius | Users reference profiles — a bad change hits every agent on it at next login. |
-| Bulk / purge endpoints | `POST agent-profile/bulk` is **verified and exposed** as of 2026-07-21 — create + delete, **no update**, and a clone must send `systemDefault=false` or every item 403s (see `wxcc-bulk`). `POST agent-profile/purge-inactive-entities` remains **unprobed and mass-destructive** — do not improvise. |
+| Bulk / purge endpoints | `POST agent-profile/bulk` is **verified and exposed** as of 2026-07-21 — create + delete, **no update**, and a clone must send `systemDefault=false` or every item 403s (see `wxcc-bulk`). `POST agent-profile/purge-inactive-entities` is now **probed: it returns 403 for a full-rights admin** and is not exposed — the same tenant-wide gate seen on `auxiliary-code` and `desktop-layout`. To delete inactive profiles, filter `active=false` in code and pass those ids to `wxcc_bulk_delete`. See **wxcc-bulk** for the canonical note. |
 
 ## Provenance and maintenance
 

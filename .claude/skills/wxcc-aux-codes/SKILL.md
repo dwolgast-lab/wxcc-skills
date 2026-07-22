@@ -59,6 +59,8 @@ There **is** a purge endpoint — `POST auxiliary-code/purge-inactive-entities` 
 tenant admin holding `cjp:config_write`, and Cisco does not document which scope it needs
 (probed 2026-07-22). The route itself is real: it answers with the app's `trackingId` error
 shape, where a nonexistent sub-path answers 405 with the framework's `timestamp` shape.
+The same 403 was then confirmed on `desktop-layout` and `agent-profile`, so the gate is
+**tenant-wide rather than specific to aux codes** — canonical note in **wxcc-bulk**.
 
 Do this instead — it is aimable at exactly the codes the user chose, which a tenant-wide
 sweep is not:

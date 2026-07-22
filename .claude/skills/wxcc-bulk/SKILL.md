@@ -66,6 +66,29 @@ an op an entity hasn't been proven to support. As of 2026-07-21:
 | `resource-collection` | ❌ | ✅ RMW | ❌ | **update only, and on PATCH**; create → 500 "no mapping for id", delete → 400 "SAVE only" |
 | `audio-file` | ❌ | ❌ | ❌ | **no bulk route published** (2026-07-22). Each file is a multipart upload — see **wxcc-audio-files**. Bulk-export is out of scope for these tools. |
 
+## Purge endpoints: real, and 403 for everyone (canonical note)
+
+Several entities publish `POST <entity>/purge-inactive-entities`. **None of them is
+exposed as a tool, and none can be called.** Probed 2026-07-22 on `auxiliary-code`,
+`desktop-layout` and `agent-profile`: all three return **403 "Access denied - Client is
+forbidden access to the resource"** for a **full-rights tenant admin** holding
+`cjp:config_write`. Cisco does not document the scope required.
+
+The routes are real, not missing — they answer with the app's `trackingId` error shape,
+while a nonexistent sub-path on the same entity answers **405** with the framework's
+`timestamp` shape. Three entities behaving identically means the gate is **tenant-wide**,
+not per-entity, so assume any other `purge-inactive-entities` behaves the same.
+
+**When a user asks to "purge" or "delete all the inactive X":**
+
+1. `wxcc_list(entity="<entity>", all_pages=true)`
+2. Filter the inactive ones **in code** — the flag is `active` on most entities but
+   **`status`** on `desktop-layout`. Show the user the names.
+3. `wxcc_bulk_delete(entity="<entity>", ids=[...], confirm=True)`
+
+That is aimable at exactly the objects the user chose, which a tenant-wide sweep is not.
+Do not present the purge endpoint as something they could reach another way.
+
 ### Correction (2026-07-22): "address-book and user have no bulk route at all" was WRONG
 
 That claim shipped here as "confirmed, not merely unprobed." It was false on **both**
