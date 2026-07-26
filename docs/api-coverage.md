@@ -5,7 +5,7 @@
 
 Cisco's OpenAPI spec ([`webex-contact-center.json`](https://github.com/webex/webex-openapi-specs/blob/main/public-spec/webex-contact-center.json)) diffed against this project's entity registry.
 
-Upstream commit **`2a282a07cede`** (2026-07-22T15:06:57Z) · registry has **23 entities**.
+Upstream commit **`804abb1e4e39`** (2026-07-24T21:13:31Z) · registry has **23 entities**.
 
 > **The spec maps what EXISTS, not what WORKS.** It declares `application/json` as an accepted body for `POST`/`PUT` on `audio-file`; live probing shows every JSON shape returns 500 and only multipart succeeds. Schema quality is uneven too - `PATCH user/{id}` documents its body as `JsonValue` with one field. **Where the spec and a live probe disagree, the probe wins**, and the probe's finding belongs in the registry note.
 

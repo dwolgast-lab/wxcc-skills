@@ -3,6 +3,41 @@
 Notable changes to the wxcc-skills library. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); entries are dated, newest first.
 
+- **2026-07-26 — The first committed tests, and drift detection that reads schemas.**
+  Two gaps closed, both of which undercut every "verified live" claim in this file.
+  - **THE REPO HAD NO TRACKED TESTS.** The "audio suite" referenced in the 2026-07-22 entry
+    was never committed, so 23 entities' worth of hard-won path quirks had nothing re-checking
+    them. New `tests/test_registry.py` — **13 tests, stdlib `unittest`, no pytest and no new
+    dependency**. It reads `ENTITIES` by reusing `load_entities()` (which parses
+    `mcp_server.py` with `ast`), so it runs with no `mcp` package, no token and no tenant.
+  - **Every assertion cites the line that consumes the key**, because a test that guards
+    nothing real is decoration. The one most worth having: `_path` builds the create path as
+    `spec["item"].replace("/{id}", "")`, so an `item` missing that exact substring makes every
+    CREATE silently POST to the item path instead of the collection.
+  - **The suite was validated by planting 12 defects and confirming each fails.** A green
+    suite that has never failed is not evidence — the same bar the route fingerprint was held
+    to when it was deliberately corrupted.
+  - **`--check` now compares write-body schemas, not just routes.** The old check printed
+    "Schemas may still have changed" and meant it: Cisco can rename a required field without
+    touching a single path, and the first you hear of it is a 400 on a live tenant. 82
+    reachable `POST`/`PUT`/`PATCH` bodies are now hashed into `docs/api-fingerprint.json`.
+  - **Deliberately narrow on both axes.** Writes only (a drifting response is a visibly odd
+    read; a drifting request corrupts a write) and structure only — property names, types,
+    enums, required — with descriptions excluded. Verified with four planted mutations: it
+    trips on a renamed field and on a body appearing where there was none, and stays quiet on
+    a reworded description and on a refused route. **A detector that cries wolf gets muted,
+    and a muted detector is worse than none.** `tests/verify_drift_detection.py` keeps that
+    negative test runnable.
+  - **NEW FINDING: `team`, `skill`, `skill-profile` and `agent-profile` publish NO request
+    body at all** for create/update — 8 reachable write ops with nothing to hash. Their
+    `create` field lists rest **entirely** on live probing, and schema drift can never cover
+    them. Recorded as `(no-body-schema)` so Cisco finally documenting one shows up as drift.
+  - **Open work is now tracked in `TODO.md`** rather than scattered across doc prose: the
+    live read-only test tier, `entry-point` being the only entity with no registry `note`
+    (allowlisted in the suite so the gap is visible, not silent), and the `refusal()`-vs-`note`
+    divergence that renders `PATCH agent-personal-greeting/{id}` as a **GAP** when it was in
+    fact probed and refused — so the headline gap count overstates the real gaps.
+
 - **2026-07-22 — `agent-personal-greeting`, queue lookups, and the Global Variables skill.**
   Entities **23**, tools **18**, skills **30**. Coverage **210/249**. All verified live.
   - **THE SPEC IS INCOMPLETE, not merely wrong.** Creating a greeting file kept returning a

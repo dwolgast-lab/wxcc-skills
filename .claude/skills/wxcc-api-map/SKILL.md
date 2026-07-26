@@ -8,7 +8,7 @@ description: Use when EXTENDING this project rather than administering a tenant 
 
 # wxcc-api-map — where everything lives
 
-Generated from Cisco's OpenAPI spec (upstream `2a282a07cede`, 2026-07-22T15:06:57Z) against a registry of **23 entities**. **210/249** operations on registered entities are reachable.
+Generated from Cisco's OpenAPI spec (upstream `804abb1e4e39`, 2026-07-24T21:13:31Z) against a registry of **23 entities**. **210/249** operations on registered entities are reachable.
 
 **This is an index, not a manual.** It says what exists and who owns the detail. Every trap, field rule and payload shape lives in the entity's skill and in the `ENTITIES` note in [mcp_server.py](../../../mcp_server.py) - one home per fact. Do not copy those here.
 
