@@ -27,6 +27,42 @@ Ordered by what breaks if it is left undone.
       there is no good one yet.* The homelab (NGINX + LetsEncrypt on `fwnet.us`) is the
       intended receiver when that scenario exists.
 
+## MCP 2026-07-28 spec revision
+
+Ships 2026-07-28; SDK support is in the **2.x** line (`2.0.0rc1` on PyPI 2026-07-26).
+`requirements.txt` is pinned `mcp>=1.28,<2` so the upgrade is a decision, not a drift.
+Installed today: `mcp 1.28.1`, `LATEST_PROTOCOL_VERSION = 2025-11-25`.
+
+**Not urgent.** The revision keeps explicit back-compat — `server/discover` doubles as a
+stdio back-compat probe, and clients MUST treat results omitting `resultType` as
+`"complete"`. So today's servers should keep working against new clients that negotiate
+down. *Inferred from the changelog's own provisions; not tested against a real RC client.*
+
+Most of the revision costs this project nothing, and that is worth knowing before anyone
+panics about it: `stateless_http = True` is already set, the transport is already
+`streamable_http_app()` (HTTP+SSE is now Deprecated), the server registers **18 tools and
+nothing else** — no resources, prompts, sampling, elicitation, roots, logging or progress —
+so the Roots/Sampling/Logging deprecations and the whole Multi Round-Trip Requests redesign
+are inapplicable. Authorization hardening (`iss` validation, `application_type`, credentials
+keyed by issuer) is client-side; we are a resource server. DCR being deprecated in favour of
+Client ID Metadata Documents does not apply either — we use a manually-registered Webex
+Integration, never DCR.
+
+Two things to actually validate when taking the 2.x upgrade:
+
+- [ ] **`ttlMs` / `cacheScope` are now required** on `tools/list` results (new
+      `CacheableResult` interface). Whether the 2.x SDK supplies defaults or the app must
+      set them per tool is **unverified** — check against the beta before upgrading.
+
+- [ ] **`Mcp-Method` / `Mcp-Name` become required headers** on Streamable HTTP POSTs, and
+      servers must reject requests whose headers and body disagree (`HeaderMismatchError`,
+      `-32020`). **`ExpectedOrgGuard` is custom ASGI middleware in exactly that layer**
+      (`mcp_http.py:127-190`). Reading it, it only inspects `authorization`,
+      `x-wxcc-expected-org` and `?org=` and passes everything through untouched, so it
+      *should* stay transparent — but that is inferred from reading, not tested. Put it on
+      a real wire before trusting it. The wrong-tenant guard is the one piece of safety
+      machinery here that has no fallback if it silently stops firing.
+
 ## Correctness
 
 - [ ] **`entry-point` is the only entity with no registry `note`.** 22 of 23 carry

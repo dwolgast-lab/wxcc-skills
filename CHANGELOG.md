@@ -3,6 +3,25 @@
 Notable changes to the wxcc-skills library. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); entries are dated, newest first.
 
+- **2026-07-26 — Pin the MCP SDK below 2.x ahead of the 2026-07-28 spec revision.**
+  `requirements.txt` was `mcp>=1.28`, an open upper bound. The 2026-07-28 revision
+  **removes the `initialize`/`initialized` handshake and protocol-level sessions**, and SDK
+  support for it lands in the **2.x** line (`2.0.0rc1` is on PyPI; latest stable is
+  `1.28.1`, which speaks `2025-11-25`). Without a bound, a routine
+  `pip install -r requirements.txt` would have silently changed the wire protocol on a
+  project whose entire discipline is probe-before-trust. Now `mcp>=1.28,<2` — verified to
+  admit 1.28.x/1.29.x and reject `2.0.0rc1`/`2.0.0` even with prereleases enabled.
+  - **Most of the revision costs this project nothing**, which is worth recording so nobody
+    re-derives it in a panic: `stateless_http` was already on, the transport is already
+    `streamable_http_app()` (HTTP+SSE is now Deprecated), and the server registers **18
+    tools and nothing else** — so the Roots/Sampling/Logging deprecations and the entire
+    Multi Round-Trip Requests redesign are inapplicable. The hardened authorization rules
+    are client-side; we are a resource server.
+  - **Two items genuinely need validation before taking 2.x**, both now in `TODO.md`:
+    `ttlMs`/`cacheScope` becoming required on `tools/list`, and the new mandatory
+    `Mcp-Method`/`Mcp-Name` headers landing in the same ASGI layer as `ExpectedOrgGuard` —
+    the wrong-tenant guard, which has no fallback if it silently stops firing.
+
 - **2026-07-26 — The first committed tests, and drift detection that reads schemas.**
   Two gaps closed, both of which undercut every "verified live" claim in this file.
   - **THE REPO HAD NO TRACKED TESTS.** The "audio suite" referenced in the 2026-07-22 entry

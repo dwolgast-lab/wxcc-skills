@@ -1,6 +1,12 @@
 # Only the MCP server needs these. `wxcc.py` itself stays stdlib-only, so the
 # CLI and every skill keep working with a bare Python install.
-mcp>=1.28
+# UPPER BOUND IS DELIBERATE. The 2026-07-28 MCP spec revision removes the
+# initialize/initialized handshake and protocol-level sessions, and SDK support
+# for it lands in the 2.x line (2.0.0rc1 is on PyPI as of 2026-07-26; latest
+# stable is 1.28.1, which speaks 2025-11-25). Without `<2`, a routine
+# `pip install -r requirements.txt` would silently change the wire protocol.
+# Raise it deliberately, after the validation in TODO.md - not by drifting.
+mcp>=1.28,<2
 
 # HTTP transport only (mcp_http.py / Cloud Run). Not needed for local stdio.
 uvicorn>=0.30
