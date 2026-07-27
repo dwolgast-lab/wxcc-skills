@@ -3,6 +3,31 @@
 Notable changes to the wxcc-skills library. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); entries are dated, newest first.
 
+- **2026-07-27 — The test that proved the query-DTO fix could not actually have caught it.**
+  External code review (Codex Sol 5.6) flagged it; measurement confirmed it. Yesterday's
+  entry called `rename_in_query_dto_schema` "the case that would have caught this." **It
+  would not have.**
+  - Every one of the four DTOs is also `$ref`d from its own **bulk-request envelope**, so
+    renaming a `TeamDTO` property moves `POST team/bulk` too — and the test asserted only
+    that *some* drift was reported. Reconstructing the pre-fix implementation and
+    re-running it: the mutation moved **1 route** (`POST team/bulk`), the assertion was
+    satisfied, and the test passed **against the exact bug it was written to catch**.
+  - **Fixed by asserting the exact route set, not a boolean.** A query-DTO rename must move
+    all three of `POST <entity>`, `PUT <entity>/{id}` and `POST <entity>/bulk`; the first
+    two are reachable *only* through the query parameter, so a body-only detector cannot
+    produce them. Extended from `team` alone to **all four** DTO-backed entities — they are
+    masked identically, so covering them without the route assertion would have fixed
+    nothing. Six cases became nine, every one now naming the routes it expects.
+  - **Validated the way the detector itself was**: rebuilt the pre-fix world entirely
+    (body-only hashing *and* a body-only baseline) and re-ran. The four query-DTO cases
+    **fail**, the other five still pass — which is correct, since those test behaviour
+    body-only hashing also had. A test that has only ever passed proves nothing; this one
+    has now been shown to fail against the implementation it exists to reject.
+  - Review's second finding — `payload_hash` ignoring `$ref`d/path-item/`content`
+    parameters — **measured and not reproduced**: zero occurrences in the live spec, zero
+    on the 82 tracked writes, no sentinels. Filed in `TODO.md` as the latent risk it is
+    (the miss would be *silent*), not the blocker it was reported as.
+
 - **2026-07-26 — CORRECTION: the drift detector was blind to query-parameter payloads.**
   Yesterday's entry claimed `team`, `skill`, `skill-profile` and `agent-profile` "publish
   NO request body at all" and that "schema drift can never cover them." **The first half is

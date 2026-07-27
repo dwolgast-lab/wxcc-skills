@@ -82,6 +82,22 @@ Two things to actually validate when taking the 2.x upgrade:
       gap count overstates the real gaps. *Fix:* give the registry a structured
       `refused: {route: reason}` key the generator reads, so there is one home per fact.
 
+- [ ] **`payload_hash` silently ignores OpenAPI payload forms it does not handle.**
+      It reads only inline, operation-level `parameters` and an inline
+      `requestBody.content["application/json"]`. Four other legal forms would be
+      dropped **with no signal at all**: path-item-level `parameters`, a `$ref`'d
+      parameter, a `$ref`'d `requestBody`, and a parameter carrying `content` instead
+      of `schema`. *Not a defect today* — measured against the live spec 2026-07-27,
+      all four occur **zero** times anywhere in the document, and zero times on the 82
+      tracked write ops; the fingerprint has no sentinels. But this is a detector whose
+      entire job is catching change nobody announced, and the failure mode is silence,
+      not a sentinel. *Fix:* run `_deref` (it already exists) over parameters and
+      `requestBody`, merge path-item `parameters`, and — more important than any of
+      that — make an unrecognised payload form return a **distinct** marker rather than
+      `NO_PAYLOAD`, so "I found nothing" and "I did not understand this" stop looking
+      alike. Raised by an external review; the review filed it as blocking, which the
+      measurement does not support.
+
 - [ ] **`wxcc.py::extract_org_id` docstring says "UNVERIFIED against a live tenant."**
       It is verified — two profiles on distinct orgs both return HTTP 200 on a derived
       org id (2026-07-25), and a wrong id would 404/403. The function is load-bearing
@@ -128,6 +144,6 @@ Two things to actually validate when taking the 2.x upgrade:
 
 ```bash
 python -m unittest discover tests -v     # offline; no tenant, no token, no deps
-python scripts/build_api_reference.py --check   # routes + write-body schemas vs upstream
+python scripts/build_api_reference.py --check   # routes + write PAYLOAD schemas vs upstream
 python tests/verify_drift_detection.py   # proves --check still detects planted drift
 ```
