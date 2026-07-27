@@ -16,11 +16,15 @@ Ordered by what breaks if it is left undone.
       *Why:* every "verified live" claim in the CHANGELOG is a one-time manual probe.
       Nothing re-runs them, so a path that moves is discovered by a failing write.
 
-- [ ] **`team`, `skill`, `skill-profile`, `agent-profile` publish NO request-body
-      schema** for create/update — 8 reachable write ops with nothing to hash
-      (`(no-body-schema)` in `docs/api-fingerprint.json`). Their `create` field lists
-      rest entirely on live probing and **schema-drift detection can never cover them**.
-      These four need the live tier more than any other entity.
+- [x] ~~**`team`, `skill`, `skill-profile`, `agent-profile` publish NO request-body
+      schema**, so schema-drift can never cover them.~~ **WRONG, corrected 2026-07-26.**
+      They declare no `requestBody`, but the object is a fully-schema'd **required query
+      parameter** — `?teamDTO=`, `?payloadDTO=`, `?skillProfileDTO=`, `?agentProfileDTO=`
+      (not even consistently named). The detector hashed only request bodies, so it
+      skipped create AND update on four core entities. Fixed: it now hashes the whole
+      declared payload (body **and** required non-path params), taking coverage from
+      74/82 to **82/82 with no sentinels**. Note the tools send a JSON *body* to these
+      routes and get 201/200 — the API accepts both forms; the spec documents only one.
 
 - [ ] **Webhook delivery payload + signing still unverified.** Needs a real receiving
       endpoint. *Deferred deliberately (2026-07-25): build a test scenario first —
@@ -84,6 +88,11 @@ Two things to actually validate when taking the 2.x upgrade:
       for the `{orgId}` path, the profile-collision guard, `WXCC_ALLOWED_ORGS`, and the
       cloud wrong-tenant guard. Leaving "UNVERIFIED" on it invites someone to work
       around it.
+
+- [ ] **Two pre-existing pyright errors in `mcp_http.py:105-106`** — `AuthSettings` wants
+      `AnyHttpUrl` and gets `str` for `issuer_url` / `resource_server_url`. Pre-dates the
+      test work (whole-project baseline is 2 errors, both these). Worth clearing while
+      touching that file for the MCP 2.x upgrade, since it is the same constructor.
 
 - [ ] **`mcp_http.py::ExpectedOrgGuard` fails open on an unparseable token.** The check
       is `if actual and actual != expected` — a token whose org cannot be derived yields

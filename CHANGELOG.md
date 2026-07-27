@@ -3,6 +3,32 @@
 Notable changes to the wxcc-skills library. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); entries are dated, newest first.
 
+- **2026-07-26 — CORRECTION: the drift detector was blind to query-parameter payloads.**
+  Yesterday's entry claimed `team`, `skill`, `skill-profile` and `agent-profile` "publish
+  NO request body at all" and that "schema drift can never cover them." **The first half is
+  misleading and the second is false.** User-supplied correction, confirmed against the spec.
+  - Those four declare no `requestBody` because the object rides in a **required query
+    parameter** holding urlencoded JSON — and the parameter is not even consistently named:
+    `team` → `?teamDTO=` (`TeamDTO`), `skill` → `?payloadDTO=` (`SkillDTO`), `skill-profile`
+    → `?skillProfileDTO=`, `agent-profile` → `?agentProfileDTO=`. All four are fully
+    schema'd. **The payload was always hashable; the detector was looking in one place.**
+  - `body_hash` → `payload_hash`: it now hashes the request body **and** every required
+    non-path parameter. Coverage went **74/82 → 82/82, no sentinels left**. Path params are
+    excluded (orgid/id, pure noise) and so are optional query params, so pagination churn
+    still cannot trip it. Create and update now share a hash per entity, which is the
+    correct signal — same DTO on both.
+  - **The negative test grew the case that would have caught this**: renaming a property in
+    `TeamDTO`, reachable *only* through `?teamDTO=`, must trip. Plus a new noise guard —
+    adding an optional query parameter must NOT trip. Six cases, all passing.
+  - **A JSON body works on these routes anyway** (verified live 201/200 2026-07-11) and is
+    what the tools send. The API accepts both forms; the spec documents only one. Recorded
+    in all four registry notes, because someone reading the spec could otherwise "fix" a
+    working code path to match it.
+  - `pyrightconfig.json` added (`extraPaths: ["scripts"]`) so `tests/` importing
+    `build_api_reference` resolves for the type checker instead of being silenced with
+    `type: ignore`. Whole-project pyright is back to its **2 pre-existing** errors
+    (`mcp_http.py:105-106`, `AnyHttpUrl` vs `str`), now tracked in `TODO.md`.
+
 - **2026-07-26 — Pin the MCP SDK below 2.x ahead of the 2026-07-28 spec revision.**
   `requirements.txt` was `mcp>=1.28`, an open upper bound. The 2026-07-28 revision
   **removes the `initialize`/`initialized` handshake and protocol-level sessions**, and SDK

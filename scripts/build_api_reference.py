@@ -271,7 +271,7 @@ def disp(rec: dict) -> str:
 #     a reworded description is a detector everyone learns to ignore.
 # --------------------------------------------------------------------------- #
 SCHEMA_MAX_DEPTH = 6
-NO_BODY = "(no-body-schema)"
+NO_PAYLOAD = "(no-payload-schema)"
 
 
 def _deref(spec: dict, node: dict, seen: frozenset) -> tuple[dict, frozenset]:
@@ -319,20 +319,41 @@ def schema_shape(spec: dict, node, seen: frozenset = frozenset(), depth: int = 0
     return leaf
 
 
-def body_hash(spec: dict, path: str, method: str) -> str:
-    """Stable short hash of one operation's JSON request body, or NO_BODY.
+def payload_hash(spec: dict, path: str, method: str) -> str:
+    """Stable short hash of one operation's whole declared payload, or NO_PAYLOAD.
 
-    NO_BODY is recorded rather than skipped on purpose: `team`, `skill`,
-    `skill-profile` and `agent-profile` publish NO request body for create/update at
-    all, so their registry field lists rest entirely on live probing. Storing the
-    absence means Cisco finally documenting one shows up as drift too.
+    THE PAYLOAD IS NOT ALWAYS A REQUEST BODY. `team`, `skill`, `skill-profile` and
+    `agent-profile` declare no `requestBody` at all - they take the object as a
+    REQUIRED QUERY PARAMETER holding urlencoded JSON, and the parameter is named
+    differently on each one:
+
+        team           ?teamDTO=          -> TeamDTO
+        skill          ?payloadDTO=       -> SkillDTO
+        skill-profile  ?skillProfileDTO=  -> SkillProfileDTO
+        agent-profile  ?agentProfileDTO=  -> AgentProfileDTO
+
+    Those are fully schema'd, so hashing only `requestBody` would silently skip four
+    core entities' create AND update - the highest-value writes in the registry. Path
+    parameters are excluded (they are only orgid/id, pure noise); optional query
+    parameters are excluded too, so pagination churn on a write cannot trip this.
+
+    NOTE the tools actually send a JSON BODY to these routes and get 201/200 - verified
+    live 2026-07-11 on team. So the spec documents one form and the API accepts both;
+    per the house rule the probe wins for what we SEND, but the DTO schema is still the
+    authoritative field list, and it is the same object shape either way.
     """
     op = (spec.get("paths", {}).get(path) or {}).get(method.lower()) or {}
-    schema = (((op.get("requestBody") or {}).get("content") or {})
-              .get("application/json") or {}).get("schema")
-    if not schema:
-        return NO_BODY
-    blob = json.dumps(schema_shape(spec, schema), sort_keys=True, default=str)
+    body = (((op.get("requestBody") or {}).get("content") or {})
+            .get("application/json") or {}).get("schema")
+    params = {p["name"]: p["schema"] for p in op.get("parameters") or []
+              if p.get("in") != "path" and p.get("required") and p.get("schema")}
+    if not body and not params:
+        return NO_PAYLOAD
+    shape = {
+        "body": schema_shape(spec, body) if body else None,
+        "params": {n: schema_shape(spec, s) for n, s in sorted(params.items())},
+    }
+    blob = json.dumps(shape, sort_keys=True, default=str)
     return hashlib.sha256(blob.encode()).hexdigest()[:12]
 
 
@@ -340,7 +361,7 @@ def write_schema_hashes(spec: dict, org: list[dict]) -> dict[str, str]:
     """Only org-scoped writes that a tool actually reaches - the ones that can break
     a real call. Unreached and refused routes are none of this detector's business."""
     return {
-        f"{o['method']} {o['path']}": body_hash(spec, o["path"], o["method"])
+        f"{o['method']} {o['path']}": payload_hash(spec, o["path"], o["method"])
         for o in sorted(org, key=lambda r: (r["path"], r["method"]))
         if o.get("tool") and o["method"] in ("POST", "PUT", "PATCH")
     }
@@ -428,12 +449,16 @@ def write_fingerprint(spec, org, other, sha, date):
         "_comment": "Drift detector for Cisco's OpenAPI spec. Regenerate with "
                     "scripts/build_api_reference.py; compare with --check. The spec "
                     "itself is deliberately not vendored - it changes ~weekly.",
-        "_schemas_comment": "write_schemas hashes the JSON request body of every "
-                            "org-scoped POST/PUT/PATCH a tool reaches - structure only "
-                            "(property names, types, enums, required), so a reworded "
-                            "description does not trip it. "
-                            f"{NO_BODY!r} means the spec publishes no request body for "
-                            "that operation at all, which is itself worth watching.",
+        "_schemas_comment": "write_schemas hashes the declared PAYLOAD of every "
+                            "org-scoped POST/PUT/PATCH a tool reaches - the JSON request "
+                            "body AND any required non-path parameter, because team, "
+                            "skill, skill-profile and agent-profile carry the object in a "
+                            "required query param (teamDTO/payloadDTO/skillProfileDTO/"
+                            "agentProfileDTO) instead of a body. Structure only (property "
+                            "names, types, enums, required), so a reworded description "
+                            "does not trip it. "
+                            f"{NO_PAYLOAD!r} means the spec declares neither, which is "
+                            "itself worth watching.",
         "spec_url": SPEC_URL,
         "upstream_commit": sha,
         "upstream_committed": date,
@@ -566,25 +591,24 @@ def check_drift() -> int:
           f"{len(old['routes'])} ops")
     print(f"upstream now: {sha[:12]} ({date}), {len(now)} ops")
 
-    old_schemas = old.get("write_schemas")
-    if old_schemas is None:
-        print("\nNOTE: this fingerprint predates write-schema tracking. Re-run without "
+    tracking_schemas = old.get("write_schemas") is not None
+    old_schemas: dict[str, str] = old.get("write_schemas") or {}
+    now_schemas: dict[str, str] = write_schema_hashes(spec, org) if tracking_schemas else {}
+    if not tracking_schemas:
+        print("\nNOTE: this fingerprint predates payload-schema tracking. Re-run without "
               "--check to capture a schema baseline.")
-        changed = new_ops = gone_ops = []
-    else:
-        now_schemas = write_schema_hashes(spec, org)
-        changed = sorted(k for k in now_schemas.keys() & old_schemas.keys()
-                         if now_schemas[k] != old_schemas[k])
-        new_ops = sorted(now_schemas.keys() - old_schemas.keys())
-        gone_ops = sorted(old_schemas.keys() - now_schemas.keys())
+    changed = sorted(k for k in now_schemas.keys() & old_schemas.keys()
+                     if now_schemas[k] != old_schemas[k])
+    new_ops = sorted(now_schemas.keys() - old_schemas.keys())
+    gone_ops = sorted(old_schemas.keys() - now_schemas.keys())
 
     if not any((added, removed, changed, new_ops, gone_ops)):
-        if old_schemas is None:
-            print("\nNo route changes. Write-body schemas are NOT being compared - "
+        if not tracking_schemas:
+            print("\nNo route changes. Payload schemas are NOT being compared - "
                   "see the note above.")
         else:
             print(f"\nNo route changes, and no change in the {len(old_schemas)} tracked "
-                  f"write-body schemas.")
+                  f"write-payload schemas.")
         return 0
 
     if added or removed:
@@ -595,22 +619,23 @@ def check_drift() -> int:
             print("  - ", r)
 
     if changed or new_ops or gone_ops:
-        print(f"\nWRITE-BODY SCHEMA DRIFT: {len(changed)} changed, "
+        print(f"\nWRITE-PAYLOAD SCHEMA DRIFT: {len(changed)} changed, "
               f"{len(new_ops)} newly tracked, {len(gone_ops)} no longer tracked")
         for k in changed:
             was, isnow = old_schemas[k], now_schemas[k]
             note = ""
-            if was == NO_BODY:
-                note = "   <- body schema ADDED where there was none"
-            elif isnow == NO_BODY:
-                note = "   <- body schema REMOVED from the spec"
+            if was == NO_PAYLOAD:
+                note = "   <- payload schema ADDED where there was none"
+            elif isnow == NO_PAYLOAD:
+                note = "   <- payload schema REMOVED from the spec"
             print(f"  ~  {k}\n       {was} -> {isnow}{note}")
         for k in new_ops:
             print("  + ", k)
         for k in gone_ops:
             print("  - ", k)
-        print("\n  A changed write body means a required field may have been renamed, "
-              "added or\n  retyped. Re-probe those writes against a tenant before "
+        print("\n  A changed write payload means a required field may have been renamed, "
+              "added or\n  retyped - in the body OR in a *DTO query parameter. Re-probe "
+              "those writes against a tenant before "
               "trusting the registry.")
 
     print("\nRe-run without --check to regenerate, then re-probe anything affected.")

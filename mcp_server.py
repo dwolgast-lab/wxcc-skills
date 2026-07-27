@@ -91,7 +91,14 @@ ENTITIES: dict[str, dict[str, Any]] = {
         },
         "note": "Bulk has NO update: an id-bearing SAVE item returns 400 \"New "
                 "configuration cannot have an id\" (same as outdial-ani). Use "
-                "wxcc_update per team.",
+                "wxcc_update per team. "
+                "THE SPEC DECLARES NO REQUEST BODY for create/update - it publishes the "
+                "object as a REQUIRED QUERY PARAM `?teamDTO=` holding urlencoded JSON "
+                "(skill uses `payloadDTO`, skill-profile `skillProfileDTO`, agent-profile "
+                "`agentProfileDTO` - not even consistently named). A plain JSON BODY "
+                "works anyway (verified live 201/200 2026-07-11) and is what these tools "
+                "send. The API accepts both; do NOT 'correct' this to the query form on "
+                "the strength of the spec alone.",
     },
     "site": {
         "list": "v2/site", "item": "site/{id}",
@@ -161,7 +168,10 @@ ENTITIES: dict[str, dict[str, Any]] = {
                 "Deleting a skill still referenced by a profile returns 412 with "
                 "referencedEntities - delete the profiles first. Bulk has NO "
                 "update (400 \"New configuration cannot have an id\"); `skill/v2/bulk` "
-                "404s - the route is `skill/bulk`.",
+                "404s - the route is `skill/bulk`. "
+                "THE SPEC DECLARES NO REQUEST BODY for create/update - the object is a "
+                "REQUIRED QUERY PARAM `?payloadDTO=` (urlencoded JSON). A JSON body works "
+                "anyway and is what these tools send - see the `team` note.",
     },
     "skill-profile": {
         "list": "v2/skill-profile", "item": "skill-profile/{id}",
@@ -177,7 +187,10 @@ ENTITIES: dict[str, dict[str, Any]] = {
                 "activeSkills entry must resend its own sub-entity `id` or you get "
                 "409 duplicate-entry. At least one skill is mandatory on create "
                 "(400 \"Atleast one skill is mandatory.\"). Bulk has NO update "
-                "(400 \"New configuration cannot have an id\").",
+                "(400 \"New configuration cannot have an id\"). "
+                "THE SPEC DECLARES NO REQUEST BODY for create/update - the object is a "
+                "REQUIRED QUERY PARAM `?skillProfileDTO=` (urlencoded JSON). A JSON body "
+                "works anyway and is what these tools send - see the `team` note.",
     },
     "auxiliary-code": {
         "list": "v2/auxiliary-code", "item": "auxiliary-code/{id}",
@@ -258,7 +271,10 @@ ENTITIES: dict[str, dict[str, Any]] = {
                 "systemDefault=false (verified live 2026-07-21). PURGE IS NOT EXPOSED: "
                 "`POST agent-profile/purge-inactive-entities` exists but returns 403 for a "
                 "full-rights admin - the same tenant-wide gate seen on auxiliary-code and "
-                "desktop-layout (2026-07-22). Use wxcc_bulk_delete on ids you chose.",
+                "desktop-layout (2026-07-22). Use wxcc_bulk_delete on ids you chose. "
+                "THE SPEC DECLARES NO REQUEST BODY for create/update - the object is a "
+                "REQUIRED QUERY PARAM `?agentProfileDTO=` (urlencoded JSON). A JSON body "
+                "works anyway and is what these tools send - see the `team` note.",
     },
     "desktop-layout": {
         "list": "v2/desktop-layout", "item": "desktop-layout/{id}",
