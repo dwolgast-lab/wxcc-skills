@@ -17,6 +17,9 @@ holds no credentials at all and each caller authenticates as themselves.
 **New here? Start with the [User Guide](docs/user-guide.md)** — setup from scratch, the
 safety model, multi-tenant, and the honest list of limits.
 
+Running these tools somewhere other than Claude Code — Claude chat, ChatGPT, Codex, Gemini
+CLI — is planned, not built: **[cross-platform plan](docs/cross-platform-plan.md)**.
+
 ## Why it's built this way
 
 **Writes are mechanically gated, not politely requested.** A write call without `confirm`
