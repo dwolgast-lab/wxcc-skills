@@ -4,9 +4,9 @@ Notable changes to the wxcc-skills library. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); entries are dated, newest first.
 
 - **2026-07-27 — The test that proved the query-DTO fix could not actually have caught it.**
-  External code review (Codex Sol 5.6) flagged it; measurement confirmed it. Yesterday's
-  entry called `rename_in_query_dto_schema` "the case that would have caught this." **It
-  would not have.**
+  External code review (Codex Sol 5.6) flagged it; measurement confirmed it. The
+  correction below called `rename_in_query_dto_schema` "the case that would have caught
+  this." **It would not have.**
   - Every one of the four DTOs is also `$ref`d from its own **bulk-request envelope**, so
     renaming a `TeamDTO` property moves `POST team/bulk` too — and the test asserted only
     that *some* drift was reported. Reconstructing the pre-fix implementation and
@@ -27,8 +27,19 @@ Notable changes to the wxcc-skills library. Format loosely follows
     parameters — **measured and not reproduced**: zero occurrences in the live spec, zero
     on the 82 tracked writes, no sentinels. Filed in `TODO.md` as the latent risk it is
     (the miss would be *silent*), not the blocker it was reported as.
+  - Housekeeping the same review surfaced: `pyrightconfig.json` used a `"_comment"` key,
+    which pyright rejects as an unrecognised setting — **it exited non-zero on every run**,
+    so the type gate was failing for a reason unrelated to any type. Moved to `//`
+    comments, which pyright does accept; the file must stay **BOM-free**, since a BOM
+    makes it unparseable (both confirmed by test, and the BOM is what made the first
+    attempt look like comments were unsupported). Two entries below were dated
+    `2026-07-26` but committed `2026-07-27`, which left the correction below claiming
+    "yesterday's entry" about an entry sharing its own date — both re-dated. Stale
+    body-only wording fixed in `build_api_reference.py` and `TODO.md`. The
+    **2026-07-26 entry is left as written**: this file corrects in a new entry rather
+    than editing history, and its `74/82` claim is already corrected below.
 
-- **2026-07-26 — CORRECTION: the drift detector was blind to query-parameter payloads.**
+- **2026-07-27 — CORRECTION: the drift detector was blind to query-parameter payloads.**
   Yesterday's entry claimed `team`, `skill`, `skill-profile` and `agent-profile` "publish
   NO request body at all" and that "schema drift can never cover them." **The first half is
   misleading and the second is false.** User-supplied correction, confirmed against the spec.
@@ -54,7 +65,7 @@ Notable changes to the wxcc-skills library. Format loosely follows
     `type: ignore`. Whole-project pyright is back to its **2 pre-existing** errors
     (`mcp_http.py:105-106`, `AnyHttpUrl` vs `str`), now tracked in `TODO.md`.
 
-- **2026-07-26 — Pin the MCP SDK below 2.x ahead of the 2026-07-28 spec revision.**
+- **2026-07-27 — Pin the MCP SDK below 2.x ahead of the 2026-07-28 spec revision.**
   `requirements.txt` was `mcp>=1.28`, an open upper bound. The 2026-07-28 revision
   **removes the `initialize`/`initialized` handshake and protocol-level sessions**, and SDK
   support for it lands in the **2.x** line (`2.0.0rc1` is on PyPI; latest stable is

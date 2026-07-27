@@ -256,11 +256,14 @@ def disp(rec: dict) -> str:
 
 
 # --------------------------------------------------------------------------- #
-# Write-body schema fingerprints
+# Write-payload schema fingerprints
 #
 # Routes alone are not enough: Cisco can rename a required field without adding or
 # removing a single path, and the first anyone hears of it is a 400 against a live
-# tenant. So hash the request body of the write operations a tool actually reaches.
+# tenant. So hash the declared PAYLOAD of the write operations a tool actually
+# reaches - the JSON request body AND any required non-path parameter, because four
+# core entities carry the object in a query parameter instead of a body (see
+# payload_hash).
 #
 # Deliberately narrow, on both axes:
 #   * WRITES ONLY. A drifting response shape shows up as a visibly odd read; a

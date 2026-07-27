@@ -1,13 +1,18 @@
+// Pyright config. NOTE: pyright accepts // comments here but NOT a "_comment" key -
+// an unrecognised setting makes it exit non-zero with
+//   Config contains unrecognized setting "_comment"
+// on every run, which is why this prose is in comments. The file must also stay
+// BOM-free: a UTF-8 BOM makes pyright fail to parse it outright.
+//
+// typeCheckingMode is pinned to pyright's default, so adding this file changes
+// nothing about how the existing modules are analysed - it exists only for
+// extraPaths.
+//
+// tests/ imports build_api_reference from scripts/ via a runtime sys.path.insert
+// (the same trick that lets the offline suite read ENTITIES without importing
+// mcp_server). Pyright cannot follow that, so it is told directly rather than
+// silenced with a per-import type: ignore.
 {
-  "_comment": [
-    "typeCheckingMode is pinned to pyright's default so adding this file changes",
-    "nothing about how the existing modules are analysed - it exists only for",
-    "extraPaths.",
-    "tests/ imports build_api_reference from scripts/ via a runtime sys.path.insert",
-    "(the same trick that lets the offline suite read ENTITIES without importing",
-    "mcp_server). Pyright cannot follow that, so it is told directly rather than",
-    "silenced with a per-import type: ignore."
-  ],
   "typeCheckingMode": "standard",
   "extraPaths": ["scripts"]
 }
