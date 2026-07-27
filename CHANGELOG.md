@@ -28,8 +28,13 @@ Notable changes to the wxcc-skills library. Format loosely follows
     on the 82 tracked writes, no sentinels. Filed in `TODO.md` as the latent risk it is
     (the miss would be *silent*), not the blocker it was reported as.
   - Housekeeping the same review surfaced: `pyrightconfig.json` used a `"_comment"` key,
-    which pyright rejects as an unrecognised setting — **it exited non-zero on every run**,
-    so the type gate was failing for a reason unrelated to any type. Moved to `//`
+    which pyright rejects as an unrecognised setting, printing
+    `Config contains unrecognized setting "_comment"` to stderr on every run. **The commit
+    message on `930000c` claims this made pyright exit non-zero; that is wrong** — tested
+    in isolation, `_comment` with zero type errors still exits 0, and the repo's non-zero
+    exit comes entirely from the two pre-existing `mcp_http.py` errors. The real cost was
+    noise on top of a gate whose output is read for exactly that. `930000c` is already
+    pushed, so its message stands uncorrected; this is the correction. Moved to `//`
     comments, which pyright does accept; the file must stay **BOM-free**, since a BOM
     makes it unparseable (both confirmed by test, and the BOM is what made the first
     attempt look like comments were unsupported). Two entries below were dated
