@@ -57,11 +57,23 @@ Left over, neither blocking:
       `docs/forge-deployment.md` has been corrected — but passing a real version string
       would be better than shipping an empty one.
 
-- [ ] **Cloud Run is the third host.** It builds from the same `Dockerfile`/`requirements.txt`,
-      so it takes 2.0.0 on its next deploy. Unlike stdio, it exercises `mcp_http.py` —
-      `ExpectedOrgGuard`, `WebexTokenVerifier` and the `AnyHttpUrl` change — against real
-      clients. Those were verified locally (see CHANGELOG 2026-08-01) but a post-deploy
-      smoke test against the live URL is still worth doing.
+- [x] ~~**Cloud Run is the third host.**~~ **Deployed 2026-08-01**, revision
+      `wxcc-mcp-00015-c6g`, 100% of traffic, from the same `Dockerfile`/`requirements.txt`.
+      Smoke-tested live: an unauthenticated `POST /mcp` returns `401 invalid_token`, and
+      `/.well-known/oauth-protected-resource` returns `200` with the correct `resource` and
+      `authorization_servers` — which is a direct production check of the `AnyHttpUrl`
+      change, since those two values *are* `resource_server_url` and `issuer_url`.
+      Rollback: `gcloud run services update-traffic wxcc-mcp --region us-central1
+      --to-revisions wxcc-mcp-00014-npl=100`.
+
+- [ ] **The cloud `ExpectedOrgGuard` 403 is still unproven against the live service.**
+      Reaching the rejection branch needs a *real* Webex token (a garbage token yields
+      `actual = None`, which the guard passes through to the verifier's 401 — see the
+      fail-open item above). It is verified **locally** on mcp 2.0.0 against the verbatim
+      guard with token parsing stubbed, both the `?org=` and header forms. What that does
+      not cover is the guard composed with the real `WebexTokenVerifier` on Cloud Run.
+      *To close it:* point a client at `…/mcp?org=<some OTHER tenant's org>` while signed
+      in to the sandbox and confirm `403 wrong_tenant`.
 
 ## Correctness
 
