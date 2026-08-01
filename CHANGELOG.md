@@ -3,6 +3,64 @@
 Notable changes to the wxcc-skills library. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); entries are dated, newest first.
 
+- **2026-08-01 — Take MCP 2.0.0 / the 2026-07-28 revision. The pin's own rationale was wrong.**
+  `mcp 2.0.0` is stable on PyPI and speaks `LATEST_PROTOCOL_VERSION = 2026-07-28`. The
+  2026-07-27 assessment cleared the revision as costing this project almost nothing. It
+  **missed the only change that actually broke us**, because it read the spec changelog and
+  never imported the SDK: **`mcp.server.fastmcp` does not exist in 2.x.** `FastMCP` is now
+  `mcp.server.mcpserver.MCPServer`. Both entrypoints failed at line 1 on import.
+  - **Migration, and it is smaller than that sounds.** `MCPServer` keeps `.tool()`,
+    `.streamable_http_app()`, `.run()` and `._token_verifier` with the same shapes, so all
+    **18 tool decorators are untouched**. `mcp.server.auth` — `AuthSettings`, `TokenVerifier`,
+    `AccessToken`, `auth_context.get_access_token` — is unchanged, so `_client()` and
+    `_served_remotely()` needed nothing.
+  - **The transport knobs moved off `settings` onto `streamable_http_app()`**
+    (`stateless_http`, `transport_security`, `host`; `port` is uvicorn's). This was the one
+    genuinely dangerous shape, and it lands **safe**: `Settings` is a pydantic model that
+    now *rejects* the old names — `mcp.settings.stateless_http = True` raises
+    `ValueError: "Settings" object has no field "stateless_http"` at import. Verified by
+    assignment, all three. A stale line fails loudly; it does not silently stop applying.
+  - **Both items TODO.md held as blocking are cleared, on a real wire — not by reading.**
+    - `ttlMs`/`cacheScope`: **the SDK supplies them.** `apply_cache_hint` fills any field
+      the handler did not set from a default `CacheHint(ttl_ms=0, scope="private")`. A live
+      `tools/list` came back `"cacheScope":"private"` with no application code at all.
+      Per-tool tuning is available via the `cache_hints=` constructor arg; we take defaults.
+    - `Mcp-Method`/`Mcp-Name` vs `ExpectedOrgGuard`: **the guard is transparent and still
+      fires.** Enforcement lives in the SDK kernel (`classify_inbound_request` rung 2), not
+      in our ASGI layer. Six assertions against the guard wrapping a real 2.0.0 app: a
+      matching org passes through to a `200` `tools/list`; a mismatched org is rejected
+      `403 wrong_tenant` via **both** the `?org=` and `X-WXCC-Expected-Org` forms; a
+      disagreeing `Mcp-Method` and a disagreeing `Mcp-Name` each return `-32020` **through**
+      the guard, proving it neither eats nor corrupts header enforcement. The wrong-tenant
+      guard is the one safety device here with no fallback; it is no longer inferred-safe.
+  - **What still speaks the old contract — checked, because this is the part that bites.**
+    A 2.0.0 server serves a **legacy 2025-11-25 client** unchanged: `initialize` negotiates
+    *down* to `2025-11-25`, and `tools/list`/`tools/call` answer `200` with **no** envelope
+    and **no** `Mcp-Method` header, correctly omitting `ttlMs`/`cacheScope`/`resultType`.
+    Confirmed over HTTP *and* over a real **stdio** subprocess — the transport the six
+    configured `wxcc-*` servers actually use — which returned all 18 tools by name.
+    2026-07-27 recorded this as "inferred from the changelog's own provisions"; it is now
+    measured.
+  - **Pinned `mcp==2.0.0` exactly, both bounds.** The old `>=1.28,<2` guarded only the major,
+    and forge had already drifted to `1.29.0` against the laptop's `1.28.1` — so "verified on
+    the laptop" had quietly stopped implying "verified on forge." An exact pin is what makes
+    the two hosts identical.
+  - Cleared the two pre-existing pyright errors in the same constructor
+    (`issuer_url`/`resource_server_url` want `AnyHttpUrl`, got `str`). Whole-project
+    baseline **2 errors → 0**.
+  - `pydantic>=2` is now a **declared** dependency. `mcp_http.py` imports it by name for
+    `AnyHttpUrl`; it arrived transitively via `mcp` before, which would have broken with no
+    line to point at if a future `mcp` dropped it.
+  - **Both hosts migrated and verified the same day, by live read rather than version string.**
+    Laptop (`pip install -r requirements.txt`, 1.28.1 → 2.0.0): a real stdio `wxcc_whoami`
+    returned `Personal Sandbox` with write scopes intact. Forge (`docker build`, 1.29.0 →
+    2.0.0): over the real `ssh → docker run -i` path, all three profiles negotiated the
+    legacy handshake and each returned its own distinct org — `174bc2cb-…`, `f766bc3c-…`,
+    `278aa0f3-…`. No collision. The pre-upgrade image is retained as `wxcc-mcp:pre-mcp2`.
+  - **Known cosmetic regression:** `serverInfo.version` is now `""` where FastMCP reported
+    the SDK version. The sentence in `docs/forge-deployment.md` that read the handshake's
+    `"version":"1.29.0"` as the SDK version has been corrected. Nothing consumes it.
+
 - **2026-07-27 — The test that proved the query-DTO fix could not actually have caught it.**
   External code review (Codex Sol 5.6) flagged it; measurement confirmed it. The
   correction below called `rename_in_query_dto_schema` "the case that would have caught

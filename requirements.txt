@@ -1,12 +1,19 @@
 # Only the MCP server needs these. `wxcc.py` itself stays stdlib-only, so the
 # CLI and every skill keep working with a bare Python install.
-# UPPER BOUND IS DELIBERATE. The 2026-07-28 MCP spec revision removes the
-# initialize/initialized handshake and protocol-level sessions, and SDK support
-# for it lands in the 2.x line (2.0.0rc1 is on PyPI as of 2026-07-26; latest
-# stable is 1.28.1, which speaks 2025-11-25). Without `<2`, a routine
-# `pip install -r requirements.txt` would silently change the wire protocol.
-# Raise it deliberately, after the validation in TODO.md - not by drifting.
-mcp>=1.28,<2
+# PINNED EXACTLY, both bounds deliberate. 2.0.0 speaks the 2026-07-28 revision;
+# the validation TODO.md asked for was done 2026-08-01 (see CHANGELOG) - the
+# wrong-tenant guard was put on a real wire, and a legacy 2025-11-25 client was
+# confirmed to still be served by negotiation. The exact pin is because forge and
+# the laptop had already drifted apart (1.29.0 vs 1.28.1) under a major-only
+# bound: every `docker build` floated to whatever was newest. Raise it
+# deliberately and rebuild BOTH hosts - not by drifting.
+mcp==2.0.0
+
+# Direct import, not just transitive. `mcp_http.py` constructs `AnyHttpUrl` itself
+# because `AuthSettings` requires it (str is a pyright error). mcp pulls pydantic in
+# anyway, but a package we `import` by name belongs here - otherwise a future mcp
+# that vendored or dropped it would break us with no line to point at.
+pydantic>=2
 
 # HTTP transport only (mcp_http.py / Cloud Run). Not needed for local stdio.
 uvicorn>=0.30

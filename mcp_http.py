@@ -28,6 +28,8 @@ import time
 import json as _json
 from urllib.parse import parse_qs, urlparse
 
+from pydantic import AnyHttpUrl
+
 from mcp.server.auth.provider import AccessToken, TokenVerifier
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.transport_security import TransportSecuritySettings
@@ -102,8 +104,8 @@ class WebexTokenVerifier(TokenVerifier):
 
 mcp._token_verifier = WebexTokenVerifier()
 mcp.settings.auth = AuthSettings(
-    issuer_url=WEBEX_ISSUER,
-    resource_server_url=RESOURCE_URL,
+    issuer_url=AnyHttpUrl(WEBEX_ISSUER),
+    resource_server_url=AnyHttpUrl(RESOURCE_URL),
     required_scopes=None,
 )
 
@@ -116,13 +118,12 @@ _host = _parsed.hostname
 _allowed = {_host, f"{_host}:443"}
 if _parsed.port:                     # a non-default port must be named explicitly,
     _allowed.add(f"{_host}:{_parsed.port}")   # or local runs answer 421
-mcp.settings.transport_security = TransportSecuritySettings(
+TRANSPORT_SECURITY = TransportSecuritySettings(
     allowed_hosts=sorted(h for h in _allowed if h),
     allowed_origins=[RESOURCE_URL],
 )
-mcp.settings.stateless_http = True   # Cloud Run may route a follow-up anywhere
-mcp.settings.host = "0.0.0.0"
-mcp.settings.port = int(os.environ.get("PORT", 8080))
+HOST = "0.0.0.0"
+PORT = int(os.environ.get("PORT", 8080))
 
 class ExpectedOrgGuard:
     """Refuse a token whose org is not the one this client says it expects.
@@ -187,15 +188,23 @@ class ExpectedOrgGuard:
         return await self.app(scope, receive, send)
 
 
-app = ExpectedOrgGuard(mcp.streamable_http_app())
+# MCP 2.x moved the transport knobs off `settings` and onto this factory. They are
+# passed here rather than assigned above because `Settings` now REJECTS the old
+# attribute names outright (ValueError: no field "stateless_http"), so a stale
+# assignment fails at import instead of silently doing nothing.
+#   stateless_http: Cloud Run may route a follow-up request anywhere.
+app = ExpectedOrgGuard(mcp.streamable_http_app(
+    stateless_http=True,
+    transport_security=TRANSPORT_SECURITY,
+    host=HOST,
+))
 
 if __name__ == "__main__":
     import uvicorn
 
-    print(f"wxcc MCP (http) on :{mcp.settings.port}{mcp.settings.streamable_http_path}",
-          file=sys.stderr)
+    print(f"wxcc MCP (http) on :{PORT}/mcp", file=sys.stderr)
     print(f"  api base     : {API_BASE}", file=sys.stderr)
     print(f"  resource url : {RESOURCE_URL}", file=sys.stderr)
     print(f"  allowed orgs : {ALLOWED_ORGS or 'ANY (set WXCC_ALLOWED_ORGS)'}",
           file=sys.stderr)
-    uvicorn.run(app, host=mcp.settings.host, port=mcp.settings.port)
+    uvicorn.run(app, host=HOST, port=PORT)

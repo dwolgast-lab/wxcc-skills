@@ -31,41 +31,37 @@ Ordered by what breaks if it is left undone.
       there is no good one yet.* The homelab (NGINX + LetsEncrypt on `fwnet.us`) is the
       intended receiver when that scenario exists.
 
-## MCP 2026-07-28 spec revision
+## MCP 2026-07-28 spec revision — ✅ ADOPTED 2026-08-01
 
-Ships 2026-07-28; SDK support is in the **2.x** line (`2.0.0rc1` on PyPI 2026-07-26).
-`requirements.txt` is pinned `mcp>=1.28,<2` so the upgrade is a decision, not a drift.
-Installed today: `mcp 1.28.1`, `LATEST_PROTOCOL_VERSION = 2025-11-25`.
+`requirements.txt` is now `mcp==2.0.0` (`LATEST_PROTOCOL_VERSION = 2026-07-28`). Both
+items previously held here as blocking were validated on a real wire and are closed; the
+detail is in `CHANGELOG.md` under 2026-08-01. Summary of what was settled, so nobody
+re-derives it: the SDK supplies `ttlMs`/`cacheScope` defaults itself, `ExpectedOrgGuard`
+is transparent to the new headers *and* still rejects a wrong tenant through both the
+`?org=` and header forms, and a legacy 2025-11-25 client is still served by negotiating
+down (confirmed over HTTP and over real stdio).
 
-**Not urgent.** The revision keeps explicit back-compat — `server/discover` doubles as a
-stdio back-compat probe, and clients MUST treat results omitting `resultType` as
-`"complete"`. So today's servers should keep working against new clients that negotiate
-down. *Inferred from the changelog's own provisions; not tested against a real RC client.*
+The 2026-07-27 assessment's one real miss, worth remembering as a method lesson: it cleared
+the revision from the **spec changelog** without importing the SDK, and so did not see that
+`mcp.server.fastmcp` is gone in 2.x. Spec-level reasoning does not catch packaging changes.
 
-Most of the revision costs this project nothing, and that is worth knowing before anyone
-panics about it: `stateless_http = True` is already set, the transport is already
-`streamable_http_app()` (HTTP+SSE is now Deprecated), the server registers **18 tools and
-nothing else** — no resources, prompts, sampling, elicitation, roots, logging or progress —
-so the Roots/Sampling/Logging deprecations and the whole Multi Round-Trip Requests redesign
-are inapplicable. Authorization hardening (`iss` validation, `application_type`, credentials
-keyed by issuer) is client-side; we are a resource server. DCR being deprecated in favour of
-Client ID Metadata Documents does not apply either — we use a manually-registered Webex
-Integration, never DCR.
+**Both hosts are on `mcp==2.0.0` as of 2026-08-01** and each was verified by a live read, not by
+a version string: the laptop via a real stdio `wxcc_whoami`, and forge over the real
+`ssh → docker run -i` path for all three profiles, each resolving to its own distinct org.
+The drift that motivated the exact pin (laptop 1.28.1 vs forge 1.29.0) is closed.
 
-Two things to actually validate when taking the 2.x upgrade:
+Left over, neither blocking:
 
-- [ ] **`ttlMs` / `cacheScope` are now required** on `tools/list` results (new
-      `CacheableResult` interface). Whether the 2.x SDK supplies defaults or the app must
-      set them per tool is **unverified** — check against the beta before upgrading.
+- [ ] **`serverInfo.version` is now `""`** (`MCPServer(version=...)` defaults empty where
+      FastMCP reported the SDK version). Nothing consumes it, and the stale sentence in
+      `docs/forge-deployment.md` has been corrected — but passing a real version string
+      would be better than shipping an empty one.
 
-- [ ] **`Mcp-Method` / `Mcp-Name` become required headers** on Streamable HTTP POSTs, and
-      servers must reject requests whose headers and body disagree (`HeaderMismatchError`,
-      `-32020`). **`ExpectedOrgGuard` is custom ASGI middleware in exactly that layer**
-      (`mcp_http.py:127-190`). Reading it, it only inspects `authorization`,
-      `x-wxcc-expected-org` and `?org=` and passes everything through untouched, so it
-      *should* stay transparent — but that is inferred from reading, not tested. Put it on
-      a real wire before trusting it. The wrong-tenant guard is the one piece of safety
-      machinery here that has no fallback if it silently stops firing.
+- [ ] **Cloud Run is the third host.** It builds from the same `Dockerfile`/`requirements.txt`,
+      so it takes 2.0.0 on its next deploy. Unlike stdio, it exercises `mcp_http.py` —
+      `ExpectedOrgGuard`, `WebexTokenVerifier` and the `AnyHttpUrl` change — against real
+      clients. Those were verified locally (see CHANGELOG 2026-08-01) but a post-deploy
+      smoke test against the live URL is still worth doing.
 
 ## Correctness
 
@@ -105,10 +101,11 @@ Two things to actually validate when taking the 2.x upgrade:
       cloud wrong-tenant guard. Leaving "UNVERIFIED" on it invites someone to work
       around it.
 
-- [ ] **Two pre-existing pyright errors in `mcp_http.py:105-106`** — `AuthSettings` wants
-      `AnyHttpUrl` and gets `str` for `issuer_url` / `resource_server_url`. Pre-dates the
-      test work (whole-project baseline is 2 errors, both these). Worth clearing while
-      touching that file for the MCP 2.x upgrade, since it is the same constructor.
+- [x] ~~**Two pre-existing pyright errors in `mcp_http.py:105-106`** — `AuthSettings` wants
+      `AnyHttpUrl` and gets `str` for `issuer_url` / `resource_server_url`.~~ **Done
+      2026-08-01** during the MCP 2.0 migration, as intended — same constructor. Both are
+      now wrapped in `AnyHttpUrl(...)`. Whole-project pyright baseline is **0 errors**
+      (1 warning: `markdown` unresolved in `scripts/build_user_guide_pdf.py`).
 
 - [ ] **`mcp_http.py::ExpectedOrgGuard` fails open on an unparseable token.** The check
       is `if actual and actual != expected` — a token whose org cannot be derived yields

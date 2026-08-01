@@ -20,7 +20,7 @@ import urllib.parse
 from pathlib import Path
 from typing import Any
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 import wxcc
 
@@ -40,7 +40,7 @@ _IDENTITY += (" It CANNOT reach any other tenant. If the user names a different 
               "tenant, use that tenant's own wxcc-* server instead. Call "
               "wxcc_whoami to confirm which org you are talking to.")
 
-mcp = FastMCP(f"wxcc-{_PROFILE}", instructions=_IDENTITY)
+mcp = MCPServer(f"wxcc-{_PROFILE}", instructions=_IDENTITY)
 
 
 # --------------------------------------------------------------------------- #
